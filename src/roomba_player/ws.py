@@ -6,17 +6,23 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from .config import settings
 from .roomba import RoombaOI
-from .telemetry import get_telemetry_snapshot
 
 
-async def telemetry_stream(websocket: WebSocket) -> None:
+def _normalize_radius(radius: int) -> int:
+    radius = int(radius)
+    if radius in (32768, -1, 1):
+        return radius
+    return max(-2000, min(2000, radius))
+
+
+async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI) -> None:
     await websocket.accept()
     try:
         while True:
-            await websocket.send_json(get_telemetry_snapshot())
+            await websocket.send_json(roomba.get_telemetry_snapshot())
             await asyncio.sleep(settings.telemetry_interval_sec)
-    finally:
-        await websocket.close()
+    except WebSocketDisconnect:
+        return
 
 
 def handle_control_message(message: dict, roomba: RoombaOI) -> dict:
@@ -31,6 +37,7 @@ def handle_control_message(message: dict, roomba: RoombaOI) -> dict:
         roomba.connect()
         roomba.start()
         roomba.safe()
+        roomba.start_sensor_stream()
         return {"ok": True, "action": action, "connected": roomba.connected}
 
     if action == "mode":
@@ -51,7 +58,7 @@ def handle_control_message(message: dict, roomba: RoombaOI) -> dict:
             "ok": True,
             "action": action,
             "velocity": max(-500, min(500, velocity)),
-            "radius": max(-2000, min(2000, radius)),
+            "radius": _normalize_radius(radius),
             "connected": roomba.connected,
         }
 

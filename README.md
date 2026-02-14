@@ -34,6 +34,11 @@ Dev tools:
 - `bash`
 - `make`
 
+### System tools (Raspberry Pi)
+
+- `rpicam-vid`
+- `ffmpeg`
+
 ### Hardware
 
 - Raspberry Pi connected to Roomba through USB serial adapter (OI pin)
@@ -67,6 +72,19 @@ Edit `.env.rpi` and set at least:
 - `ROOMBA_SERIAL_PORT`
 - `ROOMBA_BAUDRATE`
 - `ROOMBA_TIMEOUT_SEC`
+- `CAMERA_STREAM_ENABLED` (`true` / `false`)
+- `CAMERA_WIDTH` (example `800`)
+- `CAMERA_HEIGHT` (example `600`)
+- `CAMERA_FRAMERATE` (example `15`)
+- `CAMERA_PROFILE` (example `high`)
+- `CAMERA_SHUTTER` (example `12000`)
+- `CAMERA_DENOISE` (example `cdn_fast`)
+- `CAMERA_SHARPNESS` (example `1.1`)
+- `CAMERA_AWB` (example `auto`)
+- `CAMERA_H264_TCP_PORT` (example `9100`)
+- `CAMERA_HTTP_BIND_HOST` (example `0.0.0.0`)
+- `CAMERA_HTTP_PORT` (example `8081`)
+- `CAMERA_HTTP_PATH` (example `/stream.mjpg`)
 
 Notes:
 - `.env.rpi` is a local file on your PC (not committed to Git).
@@ -115,8 +133,18 @@ make restart-rpi
 
 - `GET /health`
 - `GET /telemetry`
+- `GET /player`
+- `POST /camera/start`
 - `WS /ws/telemetry`
 - `WS /ws/control`
+
+## Player page (`/player`)
+
+- Real-time sensors from Roomba OI stream.
+- Manual control with joystick buttons and AZERTY keyboard (`z`,`q`,`s`,`d`).
+- Hold-to-move and stop on release.
+- Speed slider (default `250`).
+- Optional camera stream shown on top (pipeline: `rpicam-vid` + `ffmpeg` -> MJPEG HTTP).
 
 ## WebSocket control protocol
 
@@ -139,7 +167,7 @@ Example:
 
 ```json
 {"action":"init"}
-{"action":"drive","velocity":120,"radius":32767}
+{"action":"drive","velocity":120,"radius":32768}
 {"action":"stop"}
 ```
 

@@ -16,6 +16,19 @@ class Settings(BaseSettings):
     roomba_serial_port: str = "/dev/ttyUSB0"
     roomba_baudrate: int = 115200
     roomba_timeout_sec: float = 1.0
+    camera_stream_enabled: bool = False
+    camera_width: int = 800
+    camera_height: int = 600
+    camera_framerate: int = 15
+    camera_profile: str = "high"
+    camera_shutter: int = 12000
+    camera_denoise: str = "cdn_fast"
+    camera_sharpness: float = 1.1
+    camera_awb: str = "auto"
+    camera_h264_tcp_port: int = 9100
+    camera_http_bind_host: str = "0.0.0.0"
+    camera_http_port: int = 8081
+    camera_http_path: str = "/stream.mjpg"
 
 
 settings = Settings()
