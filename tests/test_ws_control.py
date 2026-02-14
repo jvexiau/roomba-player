@@ -16,6 +16,9 @@ class FakeRoomba:
     def start(self) -> None:
         self.connected = True
 
+    def start_sensor_stream(self) -> None:
+        self.connected = True
+
     def safe(self) -> None:
         self.mode = "safe"
 
