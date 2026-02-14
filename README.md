@@ -1,4 +1,4 @@
-# roomba-player v0.2.0
+# roomba-player v0.3.1
 
 > **FR**: Plateforme Python pour piloter et monitorer un Roomba via Raspberry Pi, avec interface web temps réel, caméra optionnelle, plan du salon et odométrie persistée.
 >
@@ -12,21 +12,29 @@
 
 ## Features
 
-- Web assets split by responsibility:
+- Modular frontend (HTML/CSS/JS separated from Python):
   - `src/roomba_player/web/home.html`
   - `src/roomba_player/web/player.html`
-  - `src/roomba_player/web/static/*.css`
-  - `src/roomba_player/web/static/*.js`
-- Static assets served with cache-busting hash query (`?v=<hash>`).
-- Web control page: `/player` (joystick + clavier AZERTY `zqsd`)
-- Real-time sensors via `WS /ws/telemetry`
+  - `src/roomba_player/web/static/home.css`
+  - `src/roomba_player/web/static/player.css`
+  - `src/roomba_player/web/static/player-*.js`
+- Cache busting on static assets (`?v=<hash>`) for automatic browser refresh
+- Player UI in dark mode
+- Real-time control page `/player`:
+  - joystick buttons
+  - AZERTY keyboard (`z q s d`)
+  - hold-to-move, release-to-stop
+  - live command log
+- Real-time telemetry via `WS /ws/telemetry`
 - Control protocol via `WS /ws/control`
+- Bumper safety guard (frontend + backend):
+  - no forced reverse
+  - forward blocked when bumper constraints are active
 - Camera stream (optional): `rpicam-vid` + `ffmpeg` -> `/camera/stream`
 - Plan loading (`JSON`/`YAML`) and map rendering
-- Odometry from wheel encoders (Roomba 760 friendly)
-- Odometry history persisted in `bdd/odometry_history.jsonl`
-- Last known pose restored on service restart
-- Reset history + reset pose to plan start from `/player`
+- Odometry based on wheel encoders (Roomba 760 strategy), persisted in JSONL
+- Last pose restore at startup
+- History reset + reposition to plan start pose (`/api/odometry/reset-history`)
 
 ## Requirements / Prérequis
 
@@ -117,6 +125,8 @@ Set at least in `.env.rpi`:
 - `PLAN_DEFAULT_PATH` (recommended: `plans/salon.yaml`)
 - `CAMERA_STREAM_ENABLED` (`true` or `false`)
 - `ODOMETRY_HISTORY_PATH` (default: `bdd/odometry_history.jsonl`)
+- `ODOMETRY_SOURCE` (default: `encoders`)
+- `ODOMETRY_MM_PER_TICK` (default: `0.445`)
 
 ### 2) Deploy and restart
 
@@ -153,6 +163,12 @@ make restart-rpi
 - `GET /api/odometry`
 - `POST /api/odometry/reset`
 - `POST /api/odometry/reset-history`
+
+## Notes
+
+- Runtime plans are stored in `plans/` (git ignored).
+- Runtime history is stored in `bdd/` (git ignored).
+- This project is developed iteratively with Codex.
 
 ## License
 

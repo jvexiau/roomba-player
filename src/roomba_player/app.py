@@ -18,7 +18,7 @@ from .plan import PlanManager
 from .roomba import RoombaOI
 from .ws import control_stream, telemetry_stream
 
-app = FastAPI(title="roomba-player", version="0.3.0")
+app = FastAPI(title="roomba-player", version="0.3.1")
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 STATIC_DIR = WEB_DIR / "static"

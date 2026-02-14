@@ -87,3 +87,12 @@ def test_ws_control_both_bumpers_block_forward() -> None:
     assert result.get("guarded") is True
     assert result["velocity"] == 0
     assert result["radius"] == 32768
+
+
+def test_ws_control_single_bumper_blocks_forward_arc() -> None:
+    roomba = FakeRoomba()
+    roomba.bump_right = True
+    result = handle_control_message({"action": "drive", "velocity": 180, "radius": 220}, roomba)
+    assert result["ok"] is True
+    assert result.get("guarded") is True
+    assert result["velocity"] == 0

@@ -29,14 +29,14 @@ def _guard_drive_with_bumpers(roomba: RoombaOI, velocity: int, radius: int) -> t
     if bump_left:
         if int(velocity) < 0:
             return (int(velocity), int(radius), None)
-        if int(radius) < 0:
+        if int(radius) == -1:
             return (int(velocity), int(radius), None)
         return (0, 32768, "left_bumper_block_forward")
 
     if bump_right:
         if int(velocity) < 0:
             return (int(velocity), int(radius), None)
-        if int(radius) > 0:
+        if int(radius) == 1:
             return (int(velocity), int(radius), None)
         return (0, 32768, "right_bumper_block_forward")
 

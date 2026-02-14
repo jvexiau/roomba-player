@@ -68,15 +68,17 @@
     const r = Number(payload.radius || 32768);
     if (bumpLeft && bumpRight) return v < 0 ? payload : { action: "stop" };
 
+    const isInPlaceTurn = r === 1 || r === -1;
+
     if (bumpLeft) {
       if (v < 0) return payload;
-      if (r < 0) return payload; // only turn right
+      if (isInPlaceTurn && r < 0) return payload; // only right pivot
       return { action: "stop" };
     }
 
     if (bumpRight) {
       if (v < 0) return payload;
-      if (r > 0) return payload; // only turn left
+      if (isInPlaceTurn && r > 0) return payload; // only left pivot
       return { action: "stop" };
     }
 
