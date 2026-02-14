@@ -85,6 +85,8 @@ What this does:
 4. Writes remote `.env`
 5. Stops previous process if running and starts `uvicorn`
 
+If `pyproject.toml` dependencies changed, run `make update-rpi` once.
+
 ### Optional: Force update pip libraries / Optionnel: forcer la mise à jour des libs pip
 
 ```bash
