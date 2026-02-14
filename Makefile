@@ -1,9 +1,12 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: deploy-rpi restart-rpi logs-rpi
+.PHONY: deploy-rpi update-rpi restart-rpi logs-rpi
 
 deploy-rpi:
 	./scripts/deploy_rpi.sh
+
+update-rpi:
+	RPI_UPGRADE_LIBS=1 ./scripts/deploy_rpi.sh
 
 restart-rpi:
 	RPI_SKIP_SYNC=1 RPI_SKIP_INSTALL=1 ./scripts/deploy_rpi.sh

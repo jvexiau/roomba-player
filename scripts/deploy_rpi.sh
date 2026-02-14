@@ -13,6 +13,7 @@ set -euo pipefail
 #   RPI_BIND_PORT=8000
 #   RPI_SKIP_SYNC=0
 #   RPI_SKIP_INSTALL=0
+#   RPI_UPGRADE_LIBS=0
 #   ROOMBA_SERIAL_PORT=/dev/ttyUSB0
 #   ROOMBA_BAUDRATE=115200
 #   ROOMBA_TIMEOUT_SEC=1.0
@@ -34,6 +35,7 @@ RPI_BIND_HOST="${RPI_BIND_HOST:-0.0.0.0}"
 RPI_BIND_PORT="${RPI_BIND_PORT:-8000}"
 RPI_SKIP_SYNC="${RPI_SKIP_SYNC:-0}"
 RPI_SKIP_INSTALL="${RPI_SKIP_INSTALL:-0}"
+RPI_UPGRADE_LIBS="${RPI_UPGRADE_LIBS:-0}"
 ROOMBA_SERIAL_PORT="${ROOMBA_SERIAL_PORT:-/dev/ttyUSB0}"
 ROOMBA_BAUDRATE="${ROOMBA_BAUDRATE:-115200}"
 ROOMBA_TIMEOUT_SEC="${ROOMBA_TIMEOUT_SEC:-1.0}"
@@ -76,10 +78,11 @@ fi
 
 if [[ "$RPI_SKIP_INSTALL" != "1" ]]; then
   echo "[3/4] Install/update Python dependencies on Raspberry Pi"
-  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- "$RPI_APP_DIR" "$RPI_PYTHON" <<'REMOTE_INSTALL'
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- "$RPI_APP_DIR" "$RPI_PYTHON" "$RPI_UPGRADE_LIBS" <<'REMOTE_INSTALL'
 set -euo pipefail
 APP_DIR="$1"
 PYTHON_BIN="$2"
+UPGRADE_LIBS="$3"
 if [[ "$APP_DIR" == "~/"* ]]; then
   APP_DIR="$HOME/${APP_DIR#~/}"
 elif [[ "$APP_DIR" == "~" ]]; then
@@ -89,7 +92,12 @@ cd "$APP_DIR"
 "$PYTHON_BIN" -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -e .
+if [[ "$UPGRADE_LIBS" == "1" ]]; then
+  pip install --upgrade setuptools wheel
+  pip install --upgrade -e .
+else
+  pip install -e .
+fi
 REMOTE_INSTALL
 else
   echo "[3/4] Install skipped (RPI_SKIP_INSTALL=1)"

@@ -85,6 +85,16 @@ What this does:
 4. Writes remote `.env`
 5. Stops previous process if running and starts `uvicorn`
 
+### Optional: Force update pip libraries / Optionnel: forcer la mise à jour des libs pip
+
+```bash
+make update-rpi
+```
+
+This command does the same deployment flow, but forces:
+- `pip install --upgrade setuptools wheel`
+- `pip install --upgrade -e .`
+
 ### Step 3: Follow logs / Suivre les logs
 
 ```bash
