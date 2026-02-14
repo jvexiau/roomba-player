@@ -18,9 +18,9 @@
 
 ## Project status / Etat du projet
 
-**FR**: v0.2 initialisée: streaming télémétrie + pilotage Roomba via WebSocket sur connecteur USB-serial (Roomba OI).
+**FR**: v0.3 initialisée: pilotage WebSocket + workflow de déploiement distant PC -> Raspberry Pi.
 
-**EN**: v0.2 initialized: telemetry streaming + Roomba control over WebSocket with USB-serial connector (Roomba OI).
+**EN**: v0.3 initialized: WebSocket control + remote deployment workflow from PC to Raspberry Pi.
 
 ## Python modules required by iteration / Modules Python requis par itération
 
@@ -52,6 +52,20 @@ Install / Installation:
 pip install -e .[dev]
 ```
 
+### Iteration v0.3 (remote dev/deploy workflow)
+
+**Python modules**
+- No new application module.
+- Raspberry Pi still installs project dependencies with:
+
+```bash
+pip install -e .
+```
+
+**System tools (non-Python)**
+- `ssh`
+- `rsync`
+
 ## Hardware assumptions (v0.2)
 
 **FR**
@@ -68,6 +82,7 @@ pip install -e .[dev]
 .
 ├── .github/workflows/ci.yml
 ├── docs/architecture.md
+├── scripts/deploy_rpi.sh
 ├── src/roomba_player/
 │   ├── __init__.py
 │   ├── app.py
@@ -76,6 +91,7 @@ pip install -e .[dev]
 │   ├── telemetry.py
 │   └── ws.py
 ├── tests/test_health.py
+├── Makefile
 ├── .gitignore
 ├── pyproject.toml
 └── README.md
@@ -114,6 +130,55 @@ Expected response / Réponse attendue:
 
 ```json
 {"status":"ok","service":"roomba-player"}
+```
+
+## Remote development and deployment (PC -> Raspberry Pi)
+
+### Preconditions / Prérequis
+
+**FR**
+- Développement local sur PC.
+- Accès SSH au Raspberry Pi.
+- `ssh` et `rsync` installés sur le PC.
+- Python 3 installé sur le Raspberry Pi.
+
+**EN**
+- Local development on your PC.
+- SSH access to Raspberry Pi.
+- `ssh` and `rsync` installed on your PC.
+- Python 3 installed on Raspberry Pi.
+
+### Environment variables / Variables d'environnement
+
+- `RPI_HOST` (required): Raspberry hostname or IP
+- `RPI_USER` (default: `pi`)
+- `RPI_PORT` (default: `22`)
+- `RPI_APP_DIR` (default: `~/apps/roomba-player`)
+- `ROOMBA_SERIAL_PORT` (default: `/dev/ttyUSB0`)
+- `ROOMBA_BAUDRATE` (default: `115200`)
+
+### Deploy, install deps, restart / Déployer, installer, redémarrer
+
+```bash
+RPI_HOST=raspberrypi.local RPI_USER=pi make deploy-rpi
+```
+
+This command:
+1. Syncs code to Raspberry Pi
+2. Creates/updates `.venv`
+3. Runs `pip install -e .` on Raspberry Pi
+4. Restarts API process (kills previous one if running)
+
+### Restart only / Redémarrage seul
+
+```bash
+RPI_HOST=raspberrypi.local RPI_USER=pi make restart-rpi
+```
+
+### Follow logs / Suivre les logs
+
+```bash
+RPI_HOST=raspberrypi.local RPI_USER=pi make logs-rpi
 ```
 
 ## Endpoints (v0.2)
