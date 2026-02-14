@@ -80,11 +80,15 @@ class OdometryEstimator:
             has_encoders = left_counts is not None and right_counts is not None
             use_encoders = self._source in ("encoders", "auto", "distance_angle")
             if use_encoders and has_encoders:
+                oi_delta_angle_deg = None
+                if self._source == "distance_angle":
+                    oi_delta_angle_deg = self._consume_oi_angle_delta_locked(telemetry)
                 pose = self._update_from_encoders_locked(
                     left_counts=int(left_counts),
                     right_counts=int(right_counts),
                     bump_left=bool(telemetry.get("bump_left", False)),
                     bump_right=bool(telemetry.get("bump_right", False)),
+                    oi_delta_angle_deg=oi_delta_angle_deg,
                     telemetry=telemetry,
                 )
                 return pose
@@ -137,6 +141,7 @@ class OdometryEstimator:
         right_counts: int,
         bump_left: bool,
         bump_right: bool,
+        oi_delta_angle_deg: float | None,
         telemetry: dict,
     ) -> dict:
         if bump_left or bump_right:
@@ -146,21 +151,24 @@ class OdometryEstimator:
 
         dl, dr = self._consume_encoder_wheels_mm_locked(left_counts, right_counts)
         # Encoder mode is intended to be spec-accurate (Roomba 7xx reference behavior).
-        # Do not apply calibration scales here.
-        d = (dl + dr) * 0.5
-        a = (dr - dl) / _WHEEL_BASE_MM
+        d = ((dl + dr) * 0.5) * self._linear_scale
+        if oi_delta_angle_deg is not None:
+            angle_deg = oi_delta_angle_deg * self._angular_scale
+        else:
+            angle_deg = math.degrees((dr - dl) / _WHEEL_BASE_MM) * self._angular_scale
+        a = math.radians(angle_deg)
         self._theta_rad += a
         self._theta_rad = (self._theta_rad + math.pi) % (2.0 * math.pi) - math.pi
         self._x_mm += d * math.cos(self._theta_rad)
         self._y_mm += d * math.sin(self._theta_rad)
         self._last_delta_distance_mm = d
-        self._last_delta_angle_deg = math.degrees(a)
+        self._last_delta_angle_deg = angle_deg
         if d != 0.0 or a != 0.0:
             self._write_history_locked(
                 {
                     "event": "update",
                     "distance_mm": d,
-                    "angle_deg": math.degrees(a),
+                    "angle_deg": angle_deg,
                     "x_mm": self._x_mm,
                     "y_mm": self._y_mm,
                     "theta_deg": math.degrees(self._theta_rad),
@@ -191,6 +199,17 @@ class OdometryEstimator:
         delta_left_mm = delta_left_counts * self._mm_per_tick
         delta_right_mm = delta_right_counts * self._mm_per_tick
         return delta_left_mm, delta_right_mm
+
+    def _consume_oi_angle_delta_locked(self, telemetry: dict) -> float | None:
+        if "total_angle_deg" not in telemetry:
+            return None
+        total = float(telemetry.get("total_angle_deg", 0) or 0.0)
+        if self._last_total_angle_deg is None:
+            self._last_total_angle_deg = total
+            return None
+        delta = total - self._last_total_angle_deg
+        self._last_total_angle_deg = total
+        return delta
 
     def get_pose(self) -> dict:
         with self._lock:

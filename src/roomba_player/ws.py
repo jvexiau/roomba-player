@@ -16,6 +16,33 @@ def _normalize_radius(radius: int) -> int:
     return max(-2000, min(2000, radius))
 
 
+def _guard_drive_with_bumpers(roomba: RoombaOI, velocity: int, radius: int) -> tuple[int, int, str | None]:
+    snapshot_getter = getattr(roomba, "get_telemetry_snapshot", None)
+    snapshot = snapshot_getter() if callable(snapshot_getter) else {}
+    bump_left = bool(snapshot.get("bump_left", False))
+    bump_right = bool(snapshot.get("bump_right", False))
+    if bump_left and bump_right:
+        if int(velocity) < 0:
+            return (int(velocity), int(radius), None)
+        return (0, 32768, "both_bumpers_block_forward")
+
+    if bump_left:
+        if int(velocity) < 0:
+            return (int(velocity), int(radius), None)
+        if int(radius) < 0:
+            return (int(velocity), int(radius), None)
+        return (0, 32768, "left_bumper_block_forward")
+
+    if bump_right:
+        if int(velocity) < 0:
+            return (int(velocity), int(radius), None)
+        if int(radius) > 0:
+            return (int(velocity), int(radius), None)
+        return (0, 32768, "right_bumper_block_forward")
+
+    return (int(velocity), int(radius), None)
+
+
 async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI, odometry: OdometryEstimator | None = None) -> None:
     await websocket.accept()
     try:
@@ -62,14 +89,19 @@ def handle_control_message(message: dict, roomba: RoombaOI, odometry: OdometryEs
     if action == "drive":
         velocity = int(message.get("velocity", 0))
         radius = int(message.get("radius", 0))
+        velocity, radius, guard_reason = _guard_drive_with_bumpers(roomba=roomba, velocity=velocity, radius=radius)
         roomba.drive(velocity=velocity, radius=radius)
-        return {
+        response = {
             "ok": True,
             "action": action,
             "velocity": max(-500, min(500, velocity)),
             "radius": _normalize_radius(radius),
             "connected": roomba.connected,
         }
+        if guard_reason:
+            response["guarded"] = True
+            response["guard_reason"] = guard_reason
+        return response
 
     if action == "stop":
         roomba.stop()

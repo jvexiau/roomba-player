@@ -57,7 +57,30 @@
     }
 
     if (velocity === 0 && (!hasL || !hasR)) return { action: "stop" };
-    return { action: "drive", velocity, radius };
+    return applyBumperGuard({ action: "drive", velocity, radius });
+  }
+
+  function applyBumperGuard(payload) {
+    if (payload.action !== "drive") return payload;
+    const bumpLeft = RP.state.bumpLeft;
+    const bumpRight = RP.state.bumpRight;
+    const v = Number(payload.velocity || 0);
+    const r = Number(payload.radius || 32768);
+    if (bumpLeft && bumpRight) return v < 0 ? payload : { action: "stop" };
+
+    if (bumpLeft) {
+      if (v < 0) return payload;
+      if (r < 0) return payload; // only turn right
+      return { action: "stop" };
+    }
+
+    if (bumpRight) {
+      if (v < 0) return payload;
+      if (r > 0) return payload; // only turn left
+      return { action: "stop" };
+    }
+
+    return payload;
   }
 
   function applyDriveFromInputs(source) {

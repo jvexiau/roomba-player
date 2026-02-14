@@ -9,6 +9,8 @@ class FakeRoomba:
         self.radius = 0
         self.cleaned = False
         self.docked = False
+        self.bump_left = False
+        self.bump_right = False
 
     def connect(self) -> None:
         self.connected = True
@@ -39,6 +41,9 @@ class FakeRoomba:
     def dock(self) -> None:
         self.docked = True
 
+    def get_telemetry_snapshot(self) -> dict:
+        return {"bump_left": self.bump_left, "bump_right": self.bump_right}
+
 
 def test_ws_control_init_and_drive() -> None:
     roomba = FakeRoomba()
@@ -61,3 +66,24 @@ def test_ws_control_unknown_action() -> None:
         assert "Unsupported action" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown action")
+
+
+def test_ws_control_bumper_guard_blocks_forward() -> None:
+    roomba = FakeRoomba()
+    roomba.bump_left = True
+    result = handle_control_message({"action": "drive", "velocity": 200, "radius": 32768}, roomba)
+    assert result["ok"] is True
+    assert result.get("guarded") is True
+    assert result["velocity"] == 0
+    assert result["radius"] == 32768
+
+
+def test_ws_control_both_bumpers_block_forward() -> None:
+    roomba = FakeRoomba()
+    roomba.bump_left = True
+    roomba.bump_right = True
+    result = handle_control_message({"action": "drive", "velocity": 200, "radius": 32768}, roomba)
+    assert result["ok"] is True
+    assert result.get("guarded") is True
+    assert result["velocity"] == 0
+    assert result["radius"] == 32768

@@ -21,6 +21,8 @@
 
         const bumpLeft = Boolean(data.bump_left);
         const bumpRight = Boolean(data.bump_right);
+        RP.state.bumpLeft = bumpLeft;
+        RP.state.bumpRight = bumpRight;
         RP.utils.setTextPill(RP.refs.bumperStateNode, `L:${bumpLeft ? "1" : "0"} R:${bumpRight ? "1" : "0"}`, bumpLeft || bumpRight);
 
         const wdLeft = Boolean(data.wheel_drop_left);
