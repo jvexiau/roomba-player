@@ -27,10 +27,15 @@ _RADIUS_INPLACE_CW = -1
 _RADIUS_INPLACE_CCW = 1
 
 _STREAM_HEADER = 19
-_STREAM_PACKETS_DEFAULT = (7, 21, 25, 26, 34)
+_STREAM_PACKETS_DEFAULT = (7, 8, 9, 10, 11, 12, 21, 25, 26, 34)
 
 _PACKET_SIZE = {
     7: 1,   # bumps and wheel drops
+    8: 1,   # wall
+    9: 1,   # cliff left
+    10: 1,  # cliff front left
+    11: 1,  # cliff front right
+    12: 1,  # cliff right
     21: 1,  # charging state
     25: 2,  # battery charge (mAh)
     26: 2,  # battery capacity (mAh)
@@ -80,7 +85,19 @@ class RoombaOI:
             "battery_pct": 0,
             "state": "disconnected",
             "bumper": False,
+            "bump_left": False,
+            "bump_right": False,
+            "wheel_drop_left": False,
+            "wheel_drop_right": False,
+            "wheel_drop_caster": False,
+            "wall_seen": False,
+            "cliff_left": False,
+            "cliff_front_left": False,
+            "cliff_front_right": False,
+            "cliff_right": False,
             "dock_visible": False,
+            "charging_source_home_base": False,
+            "charging_source_internal": False,
             "roomba_connected": False,
             "battery_charge_mah": 0,
             "battery_capacity_mah": 0,
@@ -240,8 +257,29 @@ class RoombaOI:
     def _apply_sensor_packet(self, packet_id: int, data: bytes) -> None:
         with self._telemetry_lock:
             if packet_id == 7:
-                # bit0: bump right, bit1: bump left
-                self._telemetry["bumper"] = bool(data[0] & 0x03)
+                bits = data[0]
+                # packet 7 bit mapping
+                bump_right = bool(bits & (1 << 0))
+                bump_left = bool(bits & (1 << 1))
+                wheel_drop_right = bool(bits & (1 << 2))
+                wheel_drop_left = bool(bits & (1 << 3))
+                wheel_drop_caster = bool(bits & (1 << 4))
+                self._telemetry["bump_left"] = bump_left
+                self._telemetry["bump_right"] = bump_right
+                self._telemetry["wheel_drop_left"] = wheel_drop_left
+                self._telemetry["wheel_drop_right"] = wheel_drop_right
+                self._telemetry["wheel_drop_caster"] = wheel_drop_caster
+                self._telemetry["bumper"] = bump_left or bump_right
+            elif packet_id == 8:
+                self._telemetry["wall_seen"] = bool(data[0])
+            elif packet_id == 9:
+                self._telemetry["cliff_left"] = bool(data[0])
+            elif packet_id == 10:
+                self._telemetry["cliff_front_left"] = bool(data[0])
+            elif packet_id == 11:
+                self._telemetry["cliff_front_right"] = bool(data[0])
+            elif packet_id == 12:
+                self._telemetry["cliff_right"] = bool(data[0])
             elif packet_id == 21:
                 code = int(data[0])
                 self._telemetry["charging_state_code"] = code
@@ -251,8 +289,11 @@ class RoombaOI:
             elif packet_id == 26:
                 self._telemetry["battery_capacity_mah"] = int.from_bytes(data, "big", signed=False)
             elif packet_id == 34:
-                # bit1 means external home base
-                self._telemetry["dock_visible"] = bool(data[0] & 0x02)
+                bits = data[0]
+                # packet 34: bit0 internal charger, bit1 home base
+                self._telemetry["charging_source_internal"] = bool(bits & 0x01)
+                self._telemetry["charging_source_home_base"] = bool(bits & 0x02)
+                self._telemetry["dock_visible"] = bool(bits & 0x02)
 
             capacity = int(self._telemetry.get("battery_capacity_mah", 0) or 0)
             charge = int(self._telemetry.get("battery_charge_mah", 0) or 0)

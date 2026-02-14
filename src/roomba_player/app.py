@@ -140,11 +140,23 @@ PLAYER_PAGE = """<!doctype html>
               <div class="v" id="robotState">unknown</div>
             </div>
             <div class="metric">
-              <div class="k">Bumper</div>
+              <div class="k">Bumpers</div>
               <div class="v" id="bumperState"><span class="pill warn">unknown</span></div>
             </div>
             <div class="metric">
-              <div class="k">Dock visible</div>
+              <div class="k">Wheel drops</div>
+              <div class="v" id="wheelDropState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Cliff sensors</div>
+              <div class="v" id="cliffState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Charging source</div>
+              <div class="v" id="chargingSourceState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Wall + dock</div>
               <div class="v" id="dockState"><span class="pill warn">unknown</span></div>
             </div>
             <div class="metric">
@@ -183,6 +195,9 @@ PLAYER_PAGE = """<!doctype html>
       const batteryBar = document.getElementById("batteryBar");
       const robotStateNode = document.getElementById("robotState");
       const bumperStateNode = document.getElementById("bumperState");
+      const wheelDropStateNode = document.getElementById("wheelDropState");
+      const cliffStateNode = document.getElementById("cliffState");
+      const chargingSourceStateNode = document.getElementById("chargingSourceState");
       const dockStateNode = document.getElementById("dockState");
       const linkStateNode = document.getElementById("linkState");
       const telemetryTsNode = document.getElementById("telemetryTs");
@@ -337,6 +352,12 @@ PLAYER_PAGE = """<!doctype html>
           : '<span class="pill warn">no</span>';
       }
 
+      function setTextPill(node, text, ok = true) {
+        node.innerHTML = ok
+          ? `<span class="pill ok">${text}</span>`
+          : `<span class="pill warn">${text}</span>`;
+      }
+
       function connectControl() {
         controlWs = new WebSocket(wsUrl("/ws/control"));
         controlWs.onopen = () => { controlStatus.textContent = "control websocket: connected"; };
@@ -362,9 +383,45 @@ PLAYER_PAGE = """<!doctype html>
             const battery = Number(data.battery_pct || 0);
             batteryPctNode.textContent = String(battery);
             batteryBar.style.width = `${Math.max(0, Math.min(100, battery))}%`;
-            robotStateNode.textContent = String(data.state || "unknown");
-            setPill(bumperStateNode, Boolean(data.bumper));
-            setPill(dockStateNode, Boolean(data.dock_visible));
+            const chargingState = String(data.state || "unknown");
+            const chargingCode = String(data.charging_state_code ?? "?");
+            robotStateNode.textContent = `${chargingState} (code ${chargingCode})`;
+
+            const bumpLeft = Boolean(data.bump_left);
+            const bumpRight = Boolean(data.bump_right);
+            setTextPill(
+              bumperStateNode,
+              `L:${bumpLeft ? "1" : "0"} R:${bumpRight ? "1" : "0"}`,
+              bumpLeft || bumpRight
+            );
+
+            const wdLeft = Boolean(data.wheel_drop_left);
+            const wdRight = Boolean(data.wheel_drop_right);
+            const wdCaster = Boolean(data.wheel_drop_caster);
+            setTextPill(
+              wheelDropStateNode,
+              `L:${wdLeft ? "1" : "0"} R:${wdRight ? "1" : "0"} C:${wdCaster ? "1" : "0"}`,
+              wdLeft || wdRight || wdCaster
+            );
+
+            const cliffL = Boolean(data.cliff_left);
+            const cliffFL = Boolean(data.cliff_front_left);
+            const cliffFR = Boolean(data.cliff_front_right);
+            const cliffR = Boolean(data.cliff_right);
+            setTextPill(
+              cliffStateNode,
+              `L:${cliffL ? "1" : "0"} FL:${cliffFL ? "1" : "0"} FR:${cliffFR ? "1" : "0"} R:${cliffR ? "1" : "0"}`,
+              cliffL || cliffFL || cliffFR || cliffR
+            );
+
+            const sourceHome = Boolean(data.charging_source_home_base);
+            const sourceInternal = Boolean(data.charging_source_internal);
+            const srcText = `${sourceHome ? "home_base " : ""}${sourceInternal ? "internal " : ""}`.trim() || "none";
+            setTextPill(chargingSourceStateNode, srcText, sourceHome || sourceInternal);
+
+            const wallSeen = Boolean(data.wall_seen);
+            const dockVisible = Boolean(data.dock_visible);
+            setTextPill(dockStateNode, `wall:${wallSeen ? "1" : "0"} dock:${dockVisible ? "1" : "0"}`, wallSeen || dockVisible);
             setPill(linkStateNode, Boolean(data.roomba_connected));
             telemetryTsNode.textContent = String(data.timestamp || "-");
           } catch (_) {

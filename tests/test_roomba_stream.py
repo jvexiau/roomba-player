@@ -25,8 +25,12 @@ def test_stream_payload_updates_telemetry() -> None:
     snapshot = roomba.get_telemetry_snapshot()
 
     assert snapshot["bumper"] is True
+    assert snapshot["bump_left"] is True
+    assert snapshot["bump_right"] is True
     assert snapshot["state"] == "full_charging"
     assert snapshot["battery_charge_mah"] == 500
     assert snapshot["battery_capacity_mah"] == 1000
     assert snapshot["battery_pct"] == 50
     assert snapshot["dock_visible"] is True
+    assert snapshot["charging_source_home_base"] is True
+    assert snapshot["charging_source_internal"] is False
