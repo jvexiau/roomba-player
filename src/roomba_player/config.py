@@ -1,11 +1,16 @@
 """Configuration for roomba-player."""
 
-from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseModel):
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="ROOMBA_PLAYER_", extra="ignore")
+
     service_name: str = "roomba-player"
     telemetry_interval_sec: float = 1.0
+    roomba_serial_port: str = "/dev/ttyUSB0"
+    roomba_baudrate: int = 115200
+    roomba_timeout_sec: float = 1.0
 
 
 settings = Settings()

@@ -7,7 +7,7 @@ Ce document fixe la base pour construire un système efficace, maintenable et ex
 ### Couches
 - `Transport`: HTTP + WebSocket (FastAPI)
 - `Domain`: commandes robot, sécurité, état mission
-- `Adapters`: liaison Roomba (Bluetooth/Serial/WiFi bridge)
+- `Adapters`: liaison Roomba (USB Serial OI en v0.2, puis Bluetooth/WiFi bridge)
 - `Observability`: logs structurés, métriques, événements
 
 ### Principes
@@ -23,7 +23,7 @@ This document defines the foundation for an efficient, maintainable and extensib
 ### Layers
 - `Transport`: HTTP + WebSocket (FastAPI)
 - `Domain`: robot commands, safety, mission state
-- `Adapters`: Roomba connectivity (Bluetooth/Serial/WiFi bridge)
+- `Adapters`: Roomba connectivity (USB Serial OI in v0.2, then Bluetooth/WiFi bridge)
 - `Observability`: structured logs, metrics, events
 
 ### Principles
