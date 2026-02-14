@@ -22,6 +22,12 @@
 
 **EN**: v0.3 initialized: WebSocket control + remote deployment workflow from PC to Raspberry Pi.
 
+## Project provenance / Provenance du code
+
+**FR**: Ce programme est développé uniquement avec Codex, sans intervention humaine directe dans l'écriture du code.
+
+**EN**: This program is developed only with Codex, with no direct human intervention in code writing.
+
 ## Python modules required by iteration / Modules Python requis par itération
 
 ### Iteration v0.1 (scaffold API)
@@ -65,6 +71,7 @@ pip install -e .
 **System tools (non-Python)**
 - `ssh`
 - `rsync`
+- `bash`
 
 ## Hardware assumptions (v0.2)
 
@@ -81,6 +88,8 @@ pip install -e .
 ```text
 .
 ├── .github/workflows/ci.yml
+├── .env.example
+├── .env.rpi.example
 ├── docs/architecture.md
 ├── scripts/deploy_rpi.sh
 ├── src/roomba_player/
@@ -107,20 +116,30 @@ source .venv/bin/activate
 pip install -e .[dev]
 ```
 
-### 2) Configure serial device / Configurer le port série
+### 2) Create env file (not committed) / Créer le fichier env (non versionné)
 
 ```bash
-export ROOMBA_PLAYER_ROOMBA_SERIAL_PORT=/dev/ttyUSB0
-export ROOMBA_PLAYER_ROOMBA_BAUDRATE=115200
+cp .env.example .env
 ```
 
-### 3) Run API / Lancer l'API
+`src/roomba_player/config.py` loads `.env` automatically.
+
+### 3) Configure serial device / Configurer le port série
+
+```bash
+cat >> .env <<'EOF'
+ROOMBA_PLAYER_ROOMBA_SERIAL_PORT=/dev/ttyUSB0
+ROOMBA_PLAYER_ROOMBA_BAUDRATE=115200
+EOF
+```
+
+### 4) Run API / Lancer l'API
 
 ```bash
 uvicorn roomba_player.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 4) Smoke check / Vérification
+### 5) Smoke check / Vérification
 
 ```bash
 curl http://localhost:8000/health
@@ -150,35 +169,49 @@ Expected response / Réponse attendue:
 
 ### Environment variables / Variables d'environnement
 
+Location:
+- Local runtime file: `.env` (ignored by Git)
+- Local deploy file: `.env.rpi` (ignored by Git)
+- Templates committed in repo: `.env.example`, `.env.rpi.example`
+
+Setup:
+
+```bash
+cp .env.rpi.example .env.rpi
+```
+
 - `RPI_HOST` (required): Raspberry hostname or IP
 - `RPI_USER` (default: `pi`)
 - `RPI_PORT` (default: `22`)
 - `RPI_APP_DIR` (default: `~/apps/roomba-player`)
 - `ROOMBA_SERIAL_PORT` (default: `/dev/ttyUSB0`)
 - `ROOMBA_BAUDRATE` (default: `115200`)
+- `ROOMBA_TIMEOUT_SEC` (default: `1.0`)
+- `ENV_FILE` (default: `.env.rpi`)
 
 ### Deploy, install deps, restart / Déployer, installer, redémarrer
 
 ```bash
-RPI_HOST=raspberrypi.local RPI_USER=pi make deploy-rpi
+make deploy-rpi
 ```
 
 This command:
 1. Syncs code to Raspberry Pi
 2. Creates/updates `.venv`
 3. Runs `pip install -e .` on Raspberry Pi
-4. Restarts API process (kills previous one if running)
+4. Writes remote `${RPI_APP_DIR}/.env` from deployment variables
+5. Restarts API process (kills previous one if running)
 
 ### Restart only / Redémarrage seul
 
 ```bash
-RPI_HOST=raspberrypi.local RPI_USER=pi make restart-rpi
+make restart-rpi
 ```
 
 ### Follow logs / Suivre les logs
 
 ```bash
-RPI_HOST=raspberrypi.local RPI_USER=pi make logs-rpi
+make logs-rpi
 ```
 
 ## Endpoints (v0.2)

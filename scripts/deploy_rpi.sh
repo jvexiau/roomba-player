@@ -5,6 +5,7 @@ set -euo pipefail
 #   RPI_HOST=raspberrypi.local RPI_USER=pi ./scripts/deploy_rpi.sh
 #
 # Optional env vars:
+#   ENV_FILE=.env.rpi
 #   RPI_PORT=22
 #   RPI_APP_DIR=~/apps/roomba-player
 #   RPI_PYTHON=python3
@@ -14,6 +15,15 @@ set -euo pipefail
 #   RPI_SKIP_INSTALL=0
 #   ROOMBA_SERIAL_PORT=/dev/ttyUSB0
 #   ROOMBA_BAUDRATE=115200
+#   ROOMBA_TIMEOUT_SEC=1.0
+
+ENV_FILE="${ENV_FILE:-.env.rpi}"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 
 RPI_HOST="${RPI_HOST:-}"
 RPI_USER="${RPI_USER:-pi}"
@@ -26,6 +36,7 @@ RPI_SKIP_SYNC="${RPI_SKIP_SYNC:-0}"
 RPI_SKIP_INSTALL="${RPI_SKIP_INSTALL:-0}"
 ROOMBA_SERIAL_PORT="${ROOMBA_SERIAL_PORT:-/dev/ttyUSB0}"
 ROOMBA_BAUDRATE="${ROOMBA_BAUDRATE:-115200}"
+ROOMBA_TIMEOUT_SEC="${ROOMBA_TIMEOUT_SEC:-1.0}"
 
 if [[ -z "$RPI_HOST" ]]; then
   echo "Error: RPI_HOST is required (example: raspberrypi.local or 192.168.1.42)" >&2
@@ -46,6 +57,8 @@ if [[ "$RPI_SKIP_SYNC" != "1" ]]; then
     --exclude '.venv' \
     --exclude '__pycache__' \
     --exclude '.pytest_cache' \
+    --exclude '.env' \
+    --exclude '.env.*' \
     -e "$RSYNC_SSH" \
     ./ "$SSH_TARGET:$RPI_APP_DIR/"
 else
@@ -71,6 +84,11 @@ ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "
   set -euo pipefail
   cd ${RPI_APP_DIR}
   mkdir -p logs
+  cat > .env <<'ROOENV'
+ROOMBA_PLAYER_ROOMBA_SERIAL_PORT=${ROOMBA_SERIAL_PORT}
+ROOMBA_PLAYER_ROOMBA_BAUDRATE=${ROOMBA_BAUDRATE}
+ROOMBA_PLAYER_ROOMBA_TIMEOUT_SEC=${ROOMBA_TIMEOUT_SEC}
+ROOENV
   if [[ -f roomba-player.pid ]]; then
     OLD_PID=\$(cat roomba-player.pid || true)
     if [[ -n \"\${OLD_PID}\" ]] && kill -0 \"\${OLD_PID}\" 2>/dev/null; then
@@ -80,8 +98,6 @@ ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "
   fi
   pkill -f 'uvicorn roomba_player.app:app' || true
   . .venv/bin/activate
-  export ROOMBA_PLAYER_ROOMBA_SERIAL_PORT='${ROOMBA_SERIAL_PORT}'
-  export ROOMBA_PLAYER_ROOMBA_BAUDRATE='${ROOMBA_BAUDRATE}'
   nohup uvicorn roomba_player.app:app --host ${RPI_BIND_HOST} --port ${RPI_BIND_PORT} > logs/server.log 2>&1 &
   echo \$! > roomba-player.pid
   sleep 1
