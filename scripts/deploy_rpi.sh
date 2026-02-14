@@ -91,12 +91,12 @@ fi
 cd "$APP_DIR"
 "$PYTHON_BIN" -m venv .venv
 . .venv/bin/activate
-python -m pip install --upgrade pip
 if [[ "$UPGRADE_LIBS" == "1" ]]; then
+  python -m pip install --upgrade pip
   pip install --upgrade setuptools wheel
   pip install --upgrade -e .
 else
-  pip install -e .
+  pip install -e . --no-deps
 fi
 REMOTE_INSTALL
 else

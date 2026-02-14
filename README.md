@@ -95,6 +95,8 @@ This command does the same deployment flow, but forces:
 - `pip install --upgrade setuptools wheel`
 - `pip install --upgrade -e .`
 
+Default `make deploy-rpi` does not upgrade pip libraries.
+
 ### Step 3: Follow logs / Suivre les logs
 
 ```bash
