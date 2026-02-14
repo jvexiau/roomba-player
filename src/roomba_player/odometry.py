@@ -143,8 +143,10 @@ class OdometryEstimator:
             return self._snapshot_locked()
 
         dl, dr = self._consume_encoder_wheels_mm_locked(left_counts, right_counts)
-        d = ((dl + dr) * 0.5) * self._linear_scale
-        a = ((dr - dl) / _WHEEL_BASE_MM) * self._angular_scale
+        # Encoder mode is intended to be spec-accurate (Roomba 7xx reference behavior).
+        # Do not apply calibration scales here.
+        d = (dl + dr) * 0.5
+        a = (dr - dl) / _WHEEL_BASE_MM
         self._theta_rad += a
         self._theta_rad = (self._theta_rad + math.pi) % (2.0 * math.pi) - math.pi
         self._x_mm += d * math.cos(self._theta_rad)

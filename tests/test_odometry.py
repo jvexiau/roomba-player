@@ -62,12 +62,12 @@ def test_odometry_from_encoder_counts_forward() -> None:
 
 
 def test_odometry_linear_scale_reduces_distance() -> None:
-    odom_a = OdometryEstimator(linear_scale=1.0)
-    odom_b = OdometryEstimator(linear_scale=0.5)
-    odom_a.reset(0, 0, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
-    odom_b.reset(0, 0, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
-    pose_a = odom_a.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
-    pose_b = odom_b.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
+    odom_a = OdometryEstimator(source="distance_angle", linear_scale=1.0)
+    odom_b = OdometryEstimator(source="distance_angle", linear_scale=0.5)
+    odom_a.reset(0, 0, 0, base_total_distance_mm=1000, base_total_angle_deg=0)
+    odom_b.reset(0, 0, 0, base_total_distance_mm=1000, base_total_angle_deg=0)
+    pose_a = odom_a.update_from_telemetry({"total_distance_mm": 1200, "total_angle_deg": 0, "timestamp": "t1"})
+    pose_b = odom_b.update_from_telemetry({"total_distance_mm": 1200, "total_angle_deg": 0, "timestamp": "t1"})
     assert pose_b["x_mm"] < pose_a["x_mm"]
 
 
@@ -131,3 +131,13 @@ def test_bump_freezes_encoder_odometry_step() -> None:
     )
     assert round(pose["x_mm"], 3) == 0.0
     assert round(pose["y_mm"], 3) == 0.0
+
+
+def test_encoder_mode_ignores_linear_scale() -> None:
+    odom_a = OdometryEstimator(source="encoders", linear_scale=1.0)
+    odom_b = OdometryEstimator(source="encoders", linear_scale=0.5)
+    odom_a.reset(0, 0, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    odom_b.reset(0, 0, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    pose_a = odom_a.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
+    pose_b = odom_b.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
+    assert round(pose_a["x_mm"], 6) == round(pose_b["x_mm"], 6)

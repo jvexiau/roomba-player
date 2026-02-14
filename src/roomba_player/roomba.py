@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 
 try:
     import serial
@@ -84,6 +84,7 @@ class RoombaOI:
         self._last_stream_start_monotonic = 0.0
 
         self._telemetry_lock = threading.Lock()
+        self._frame_callback: Callable[[dict], None] | None = None
         self._telemetry = {
             "timestamp": _now_iso(),
             "battery_pct": 0,
@@ -123,6 +124,9 @@ class RoombaOI:
             payload = dict(self._telemetry)
         payload["roomba_connected"] = self.connected
         return payload
+
+    def set_frame_callback(self, callback: Callable[[dict], None] | None) -> None:
+        self._frame_callback = callback
 
     def connect(self) -> None:
         if self.connected:
@@ -244,6 +248,14 @@ class RoombaOI:
             self._apply_sensor_packet(packet_id, data)
         with self._telemetry_lock:
             self._telemetry["timestamp"] = _now_iso()
+            frame_snapshot = dict(self._telemetry)
+        frame_snapshot["roomba_connected"] = self.connected
+        if self._frame_callback is not None:
+            try:
+                self._frame_callback(frame_snapshot)
+            except Exception:
+                # Keep sensor stream resilient even if callback fails.
+                pass
         self._last_stream_update_monotonic = time.monotonic()
 
     def ensure_sensor_stream(self, max_stale_sec: float = 3.0, restart_cooldown_sec: float = 2.0) -> None:

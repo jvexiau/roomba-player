@@ -12,7 +12,7 @@ from .plan import PlanManager
 from .roomba import RoombaOI
 from .ws import control_stream, telemetry_stream
 
-app = FastAPI(title="roomba-player", version="0.2.0")
+app = FastAPI(title="roomba-player", version="0.2.1")
 
 HOME_PAGE = """<!doctype html>
 <html lang="en">
@@ -717,6 +717,7 @@ def startup() -> None:
         linear_scale=settings.odometry_linear_scale,
         angular_scale=settings.odometry_angular_scale,
     )
+    app.state.roomba.set_frame_callback(app.state.odometry.update_from_telemetry)
     app.state.plan = PlanManager()
     app.state.camera = CameraService(
         enabled=settings.camera_stream_enabled,
@@ -876,7 +877,6 @@ def load_plan_json(payload: dict) -> dict:
 
 @app.get("/api/odometry")
 def get_odometry() -> dict:
-    app.state.odometry.update_from_telemetry(app.state.roomba.get_telemetry_snapshot())
     return app.state.odometry.get_pose()
 
 
@@ -916,7 +916,7 @@ def reset_odometry_history() -> dict:
 @app.get("/telemetry")
 def telemetry() -> dict:
     payload = app.state.roomba.get_telemetry_snapshot()
-    payload["odometry"] = app.state.odometry.update_from_telemetry(payload)
+    payload["odometry"] = app.state.odometry.get_pose()
     return payload
 
 

@@ -27,7 +27,7 @@ async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI, odometry: Odo
                 pass
             payload = roomba.get_telemetry_snapshot()
             if odometry is not None:
-                payload["odometry"] = odometry.update_from_telemetry(payload)
+                payload["odometry"] = odometry.get_pose()
             await websocket.send_json(payload)
             await asyncio.sleep(settings.telemetry_interval_sec)
     except WebSocketDisconnect:
