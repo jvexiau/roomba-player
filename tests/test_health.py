@@ -16,4 +16,11 @@ def test_home_page():
     response = client.get("/")
     assert response.status_code == 200
     assert "roomba-player" in response.text
+    assert "/player" in response.text
+
+
+def test_player_page():
+    response = client.get("/player")
+    assert response.status_code == 200
+    assert "Keyboard (AZERTY)" in response.text
     assert "/ws/control" in response.text
