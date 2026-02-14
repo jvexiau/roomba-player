@@ -135,6 +135,7 @@ make restart-rpi
 - `GET /telemetry`
 - `GET /player`
 - `POST /camera/start`
+- `GET /camera/stream`
 - `WS /ws/telemetry`
 - `WS /ws/control`
 
@@ -145,6 +146,7 @@ make restart-rpi
 - Hold-to-move and stop on release.
 - Speed slider (default `250`).
 - Optional camera stream shown on top (pipeline: `rpicam-vid` + `ffmpeg` -> MJPEG HTTP).
+- Camera starts automatically from `/player` (no manual `curl` required).
 
 ## WebSocket control protocol
 

@@ -1,18 +1,17 @@
-"""Raspberry camera streaming pipeline (rpicam-vid -> ffmpeg -> HTTP MJPEG)."""
+"""Camera streaming helpers based on rpicam-vid + ffmpeg."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import threading
-import time
 
 
 class CameraService:
-    """Best-effort camera pipeline launcher.
+    """On-demand camera stream pipeline.
 
-    Pipeline:
-    - `rpicam-vid` outputs H264 over local TCP
-    - `ffmpeg` listens on this TCP stream and serves MJPEG over local HTTP
+    Stream chain (per HTTP client):
+    rpicam-vid (H264 stdout) -> ffmpeg (MJPEG stdout) -> HTTP response
     """
 
     def __init__(
@@ -45,10 +44,9 @@ class CameraService:
         self.http_bind_host = http_bind_host
         self.http_port = http_port
         self.http_path = http_path if http_path.startswith("/") else f"/{http_path}"
-
-        self._lock = threading.RLock()
-        self._camera_process = None
-        self._ffmpeg_process = None
+        self._lock = threading.Lock()
+        self._active_camera = None
+        self._active_ffmpeg = None
 
     @property
     def stream_url(self) -> str:
@@ -58,128 +56,116 @@ class CameraService:
         if not self.enabled:
             return {"enabled": False, "started": False, "reason": "disabled", "stream_url": ""}
 
-        with self._lock:
-            ffmpeg_running = self._is_running(self._ffmpeg_process)
-            camera_running = self._is_running(self._camera_process)
-            if ffmpeg_running and camera_running:
-                return {
-                    "enabled": True,
-                    "started": False,
-                    "reason": "already_running",
-                    "stream_url": self.stream_url,
-                }
-
-            self._terminate(self._camera_process)
-            self._terminate(self._ffmpeg_process)
-            self._camera_process = None
-            self._ffmpeg_process = None
-
-            try:
-                self._start_ffmpeg()
-                time.sleep(0.25)
-                self._start_camera()
-            except Exception as exc:
-                self._terminate(self._camera_process)
-                self._terminate(self._ffmpeg_process)
-                self._camera_process = None
-                self._ffmpeg_process = None
-                return {
-                    "enabled": True,
-                    "started": False,
-                    "reason": f"start_failed:{type(exc).__name__}",
-                    "stream_url": self.stream_url,
-                }
-
+        missing = []
+        if shutil.which("rpicam-vid") is None:
+            missing.append("rpicam-vid")
+        if shutil.which("ffmpeg") is None:
+            missing.append("ffmpeg")
+        if missing:
             return {
                 "enabled": True,
-                "started": True,
-                "reason": "started",
-                "stream_url": self.stream_url,
+                "started": False,
+                "reason": f"missing_binaries:{','.join(missing)}",
+                "stream_url": "/camera/stream",
             }
+
+        return {
+            "enabled": True,
+            "started": True,
+            "reason": "ready_on_demand",
+            "stream_url": "/camera/stream",
+        }
+
+    def open_stream_processes(self):
+        """Create per-request stream processes.
+
+        Returns `(camera_proc, ffmpeg_proc)` where ffmpeg stdout is MJPEG bytes.
+        """
+        with self._lock:
+            self._terminate_pair(self._active_camera, self._active_ffmpeg)
+
+            camera_cmd = [
+                "rpicam-vid",
+                "--nopreview",
+                "--codec",
+                "h264",
+                "--profile",
+                str(self.profile),
+                "--inline",
+                "--width",
+                str(self.width),
+                "--height",
+                str(self.height),
+                "--framerate",
+                str(self.framerate),
+                "--shutter",
+                str(self.shutter),
+                "--denoise",
+                str(self.denoise),
+                "--sharpness",
+                str(self.sharpness),
+                "--awb",
+                str(self.awb),
+                "-t",
+                "0",
+                "-o",
+                "-",
+            ]
+
+            camera_proc = subprocess.Popen(
+                camera_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-loglevel",
+                "error",
+                "-fflags",
+                "nobuffer",
+                "-flags",
+                "low_delay",
+                "-f",
+                "h264",
+                "-i",
+                "pipe:0",
+                "-an",
+                "-c:v",
+                "mjpeg",
+                "-q:v",
+                "7",
+                "-f",
+                "mpjpeg",
+                "pipe:1",
+            ]
+
+            ffmpeg_proc = subprocess.Popen(
+                ffmpeg_cmd,
+                stdin=camera_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+            self._active_camera = camera_proc
+            self._active_ffmpeg = ffmpeg_proc
+            return camera_proc, ffmpeg_proc
 
     def stop(self) -> None:
         with self._lock:
-            self._terminate(self._camera_process)
-            self._terminate(self._ffmpeg_process)
-            self._camera_process = None
-            self._ffmpeg_process = None
+            self._terminate_pair(self._active_camera, self._active_ffmpeg)
+            self._active_camera = None
+            self._active_ffmpeg = None
 
     @staticmethod
-    def _is_running(process) -> bool:
-        return bool(process and process.poll() is None)
-
-    @staticmethod
-    def _terminate(process) -> None:
-        if not process:
-            return
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=1.5)
-            except Exception:
-                process.kill()
-
-    def _start_ffmpeg(self) -> None:
-        input_url = f"tcp://127.0.0.1:{self.h264_tcp_port}?listen=1"
-        output_url = self.stream_url
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-loglevel",
-            "error",
-            "-fflags",
-            "nobuffer",
-            "-flags",
-            "low_delay",
-            "-i",
-            input_url,
-            "-an",
-            "-c:v",
-            "mjpeg",
-            "-q:v",
-            "7",
-            "-f",
-            "mpjpeg",
-            "-listen",
-            "1",
-            output_url,
-        ]
-        self._ffmpeg_process = subprocess.Popen(
-            ffmpeg_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    def _start_camera(self) -> None:
-        out_url = f"tcp://127.0.0.1:{self.h264_tcp_port}"
-        camera_cmd = [
-            "rpicam-vid",
-            "--nopreview",
-            "--codec",
-            "h264",
-            "--profile",
-            str(self.profile),
-            "--inline",
-            "--width",
-            str(self.width),
-            "--height",
-            str(self.height),
-            "--framerate",
-            str(self.framerate),
-            "--shutter",
-            str(self.shutter),
-            "--denoise",
-            str(self.denoise),
-            "--sharpness",
-            str(self.sharpness),
-            "--awb",
-            str(self.awb),
-            "-t",
-            "0",
-            "-o",
-            out_url,
-        ]
-        self._camera_process = subprocess.Popen(
-            camera_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    def _terminate_pair(camera_proc, ffmpeg_proc) -> None:
+        for proc in (ffmpeg_proc, camera_proc):
+            if not proc:
+                continue
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=1.0)
+                except Exception:
+                    if proc.poll() is None:
+                        proc.kill()

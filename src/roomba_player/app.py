@@ -1,9 +1,8 @@
 """FastAPI entrypoint."""
 
 import json
-
 from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from .camera import CameraService
 from .config import settings
@@ -228,11 +227,39 @@ PLAYER_PAGE = """<!doctype html>
           cameraMessage.textContent = "Camera stream disabled.";
           return;
         }
+        const baseUrl = `/camera/stream`;
+        let retryTimer = null;
+        const ensureStarted = async () => {
+          try {
+            const r = await fetch("/camera/start", { method: "POST" });
+            const j = await r.json();
+            addLog(`camera/start -> ${JSON.stringify(j)}`);
+          } catch (_) {
+            addLog("camera start request failed");
+          }
+        };
+        const scheduleRetry = () => {
+          if (retryTimer) return;
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            ensureStarted().finally(() => {
+              const sep = baseUrl.includes("?") ? "&" : "?";
+              cameraFeed.src = `${baseUrl}${sep}t=${Date.now()}`;
+            });
+          }, 1200);
+        };
+        await ensureStarted();
         cameraMessage.textContent = "Camera stream loading...";
-        cameraFeed.src = `http://${window.location.hostname}:${CAMERA_HTTP_PORT}${CAMERA_HTTP_PATH}`;
+        cameraFeed.src = `${baseUrl}?t=${Date.now()}`;
         cameraFeed.style.display = "block";
-        cameraFeed.onload = () => { cameraMessage.style.display = "none"; };
-        cameraFeed.onerror = () => { cameraMessage.textContent = "Camera stream unavailable."; };
+        cameraFeed.onload = () => {
+          cameraMessage.style.display = "none";
+        };
+        cameraFeed.onerror = () => {
+          cameraMessage.style.display = "block";
+          cameraMessage.textContent = "Camera stream unavailable (retrying...)";
+          scheduleRetry();
+        };
       }
 
       function listActiveInputs() {
@@ -461,6 +488,31 @@ def player() -> str:
 @app.post("/camera/start")
 def camera_start() -> dict:
     return app.state.camera.start_if_enabled()
+
+
+@app.get("/camera/stream")
+def camera_stream():
+    start = app.state.camera.start_if_enabled()
+    if not start.get("enabled"):
+        return JSONResponse({"ok": False, "error": "camera_disabled"}, status_code=404)
+    if not start.get("started"):
+        return JSONResponse({"ok": False, "error": start.get("reason", "camera_not_ready")}, status_code=503)
+    try:
+        camera_proc, ffmpeg_proc = app.state.camera.open_stream_processes()
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": f"camera_pipeline_error:{exc}"}, status_code=503)
+
+    def stream_iter():
+        try:
+            while True:
+                chunk = ffmpeg_proc.stdout.read(8192)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            app.state.camera.stop()
+
+    return StreamingResponse(stream_iter(), media_type="multipart/x-mixed-replace; boundary=ffmpeg")
 
 
 @app.get("/health")
