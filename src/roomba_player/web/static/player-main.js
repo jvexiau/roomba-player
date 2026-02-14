@@ -22,7 +22,10 @@
         const r = await fetch("/api/odometry/reset-history", { method: "POST" });
         const j = await r.json();
         RP.utils.addLog(`odometry/reset-history -> ${JSON.stringify(j)}`);
-        await RP.map.refreshOdometry();
+        if (j && typeof j.x_mm === "number") {
+          RP.state.currentOdom = j;
+          RP.map.drawRobotPose();
+        }
       } catch (_) {
         RP.utils.addLog("odometry/reset-history failed");
       }
@@ -51,12 +54,12 @@
   function start() {
     RP.refs.speedValue.textContent = RP.refs.speedSlider.value;
     RP.camera.startCameraIfEnabled();
+    RP.aruco.startArucoIfEnabled();
     RP.controls.connectControl();
     RP.controls.bindControls();
     RP.telemetry.connectTelemetry();
     bindPlanActions();
     RP.map.refreshPlan();
-    RP.map.startOdometryPolling();
   }
 
   start();

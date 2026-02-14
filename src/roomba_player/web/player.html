@@ -14,7 +14,9 @@
         <div class="camera-box" id="cameraBox">
           <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
           <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
+          <canvas id="cameraOverlay" style="display:none;"></canvas>
         </div>
+        <p class="small">ArUco: <strong id="arucoStatus">disabled</strong></p>
       </section>
       <section class="card">
         <h2>Salon Map</h2>
@@ -118,12 +120,14 @@
     <script>
       window.ROOMBA_PLAYER_CONFIG = {
         cameraEnabled: __CAMERA_ENABLED__,
+        arucoEnabled: __ARUCO_ENABLED__,
       };
     </script>
     <script src="/static/player-state.js?v=__ASSET_VERSION__"></script>
     <script src="/static/player-utils.js?v=__ASSET_VERSION__"></script>
     <script src="/static/player-map.js?v=__ASSET_VERSION__"></script>
     <script src="/static/player-camera.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-aruco.js?v=__ASSET_VERSION__"></script>
     <script src="/static/player-controls.js?v=__ASSET_VERSION__"></script>
     <script src="/static/player-telemetry.js?v=__ASSET_VERSION__"></script>
     <script src="/static/player-main.js?v=__ASSET_VERSION__"></script>

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     camera_http_bind_host: str = "0.0.0.0"
     camera_http_port: int = 8081
     camera_http_path: str = "/stream.mjpg"
+    aruco_enabled: bool = False
+    aruco_interval_sec: float = 1.0
+    aruco_dictionary: str = "DICT_4X4_50"
     plan_default_path: str = ""
     odometry_history_path: str = "bdd/odometry_history.jsonl"
     odometry_source: str = "encoders"

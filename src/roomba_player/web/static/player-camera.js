@@ -34,14 +34,23 @@
     RP.refs.cameraMessage.textContent = "Camera stream loading...";
     RP.refs.cameraFeed.src = `${baseUrl}?t=${Date.now()}`;
     RP.refs.cameraFeed.style.display = "block";
+    if (RP.refs.cameraOverlay) RP.refs.cameraOverlay.style.display = "block";
     RP.refs.cameraFeed.onload = () => {
       RP.refs.cameraMessage.style.display = "none";
+      if (RP.aruco && typeof RP.aruco.resizeOverlay === "function") {
+        RP.aruco.resizeOverlay();
+      }
     };
     RP.refs.cameraFeed.onerror = () => {
       RP.refs.cameraMessage.style.display = "block";
       RP.refs.cameraMessage.textContent = "Camera stream unavailable (retrying...)";
       scheduleRetry();
     };
+    window.addEventListener("resize", () => {
+      if (RP.aruco && typeof RP.aruco.resizeOverlay === "function") {
+        RP.aruco.resizeOverlay();
+      }
+    });
   }
 
   RP.camera = { startCameraIfEnabled };

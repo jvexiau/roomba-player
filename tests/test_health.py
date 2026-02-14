@@ -24,6 +24,7 @@ def test_player_page():
         assert response.status_code == 200
         assert "Keyboard AZERTY" in response.text
         assert "/static/player-main.js" in response.text
+        assert "/static/player-aruco.js" in response.text
         assert "__CAMERA_ENABLED__" not in response.text
 
 
@@ -32,3 +33,12 @@ def test_camera_start_disabled_by_default():
         response = client.post("/camera/start")
         assert response.status_code == 200
         assert response.json()["enabled"] is False
+
+
+def test_aruco_status_endpoint():
+    with TestClient(app) as client:
+        response = client.get("/aruco/status")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["enabled"] is False
+        assert "last_result" in payload

@@ -86,24 +86,8 @@
     drawRobotPose();
   }
 
-  async function refreshOdometry() {
-    try {
-      const r = await fetch("/api/odometry");
-      RP.state.currentOdom = await r.json();
-    } catch (_) {}
-    drawRobotPose();
-  }
-
-  function startOdometryPolling() {
-    if (RP.state.odomPollTimer) clearInterval(RP.state.odomPollTimer);
-    refreshOdometry();
-    RP.state.odomPollTimer = setInterval(refreshOdometry, 120);
-  }
-
   RP.map = {
     drawRobotPose,
     refreshPlan,
-    refreshOdometry,
-    startOdometryPolling,
   };
 })();

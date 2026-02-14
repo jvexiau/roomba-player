@@ -51,6 +51,9 @@
           RP.state.currentOdom = data.odometry;
           RP.map.drawRobotPose();
         }
+        if (RP.aruco && typeof RP.aruco.updateFromTelemetry === "function") {
+          RP.aruco.updateFromTelemetry(data.aruco || null);
+        }
       } catch (_) {
         RP.utils.addLog(`telemetry parse error: ${evt.data}`);
       }

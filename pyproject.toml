@@ -19,7 +19,8 @@ dependencies = [
   "pydantic-settings>=2.4.0",
   "python-dotenv>=1.0.1",
   "PyYAML>=6.0.1",
-  "pyserial>=3.5"
+  "pyserial>=3.5",
+  "opencv-contrib-python-headless>=4.10.0.84"
 ]
 
 [project.optional-dependencies]

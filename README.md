@@ -31,6 +31,7 @@
   - no forced reverse
   - forward blocked when bumper constraints are active
 - Camera stream (optional): `rpicam-vid` + `ffmpeg` -> `/camera/stream`
+- ArUco detection overlay (optional): backend detection every second on camera stream + passive frontend overlay from websocket telemetry
 - Plan loading (`JSON`/`YAML`) and map rendering
 - Odometry based on wheel encoders (Roomba 760 strategy), persisted in JSONL
 - Last pose restore at startup
@@ -49,6 +50,7 @@ Installed with `pip install -e .`:
 - `python-dotenv`
 - `PyYAML`
 - `pyserial`
+- `opencv-contrib-python-headless`
 
 Dev tools:
 - `pytest`
@@ -124,6 +126,9 @@ Set at least in `.env.rpi`:
 - `ROOMBA_TIMEOUT_SEC`
 - `PLAN_DEFAULT_PATH` (recommended: `plans/salon.yaml`)
 - `CAMERA_STREAM_ENABLED` (`true` or `false`)
+- `ARUCO_ENABLED` (`true` or `false`)
+- `ARUCO_INTERVAL_SEC` (default `1.0`)
+- `ARUCO_DICTIONARY` (default `DICT_4X4_50`)
 - `ODOMETRY_HISTORY_PATH` (default: `bdd/odometry_history.jsonl`)
 - `ODOMETRY_SOURCE` (default: `encoders`)
 - `ODOMETRY_MM_PER_TICK` (default: `0.445`)
@@ -155,6 +160,8 @@ make restart-rpi
 - `GET /telemetry`
 - `POST /camera/start`
 - `GET /camera/stream`
+- `GET /aruco/status`
+- `GET /aruco/debug`
 - `WS /ws/telemetry`
 - `WS /ws/control`
 - `GET /api/plan`

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .aruco import ArucoService
 from .camera import CameraService
 from .config import settings
 from .history import JsonlHistoryStore
@@ -75,6 +77,12 @@ def startup() -> None:
         http_port=settings.camera_http_port,
         http_path=settings.camera_http_path,
     )
+    app.state.aruco = ArucoService(
+        enabled=settings.aruco_enabled,
+        interval_sec=settings.aruco_interval_sec,
+        dictionary_name=settings.aruco_dictionary,
+    )
+    app.state.aruco.start()
 
     restored_pose = app.state.odometry_history.last_pose()
     if restored_pose:
@@ -102,6 +110,7 @@ def startup() -> None:
 def shutdown() -> None:
     app.state.roomba.close()
     app.state.camera.stop()
+    app.state.aruco.stop()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -116,6 +125,7 @@ def player() -> str:
         "player.html",
         {
             "__CAMERA_ENABLED__": json.dumps(settings.camera_stream_enabled),
+            "__ARUCO_ENABLED__": json.dumps(settings.aruco_enabled),
         },
     )
 
@@ -138,16 +148,42 @@ def camera_stream():
         return JSONResponse({"ok": False, "error": f"camera_pipeline_error:{exc}"}, status_code=503)
 
     def stream_iter():
+        aruco_buf = bytearray()
+        next_aruco_at = 0.0
         try:
             while True:
                 chunk = ffmpeg_proc.stdout.read(8192)
                 if not chunk:
                     break
+                if app.state.aruco.enabled:
+                    aruco_buf.extend(chunk)
+                    now = time.monotonic()
+                    if now >= next_aruco_at:
+                        data = bytes(aruco_buf)
+                        start = data.rfind(b"\xff\xd8")
+                        end = data.rfind(b"\xff\xd9")
+                        if start >= 0 and end > start:
+                            app.state.aruco.enqueue_jpeg_frame(data[start : end + 2])
+                            next_aruco_at = now + app.state.aruco.interval_sec
+                            if len(aruco_buf) > 128_000:
+                                aruco_buf[:] = aruco_buf[-64_000:]
+                        elif len(aruco_buf) > 1_000_000:
+                            aruco_buf[:] = aruco_buf[-64_000:]
                 yield chunk
         finally:
             app.state.camera.stop()
 
     return StreamingResponse(stream_iter(), media_type="multipart/x-mixed-replace; boundary=ffmpeg")
+
+
+@app.get("/aruco/status")
+def aruco_status() -> dict:
+    return app.state.aruco.status()
+
+
+@app.get("/aruco/debug")
+def aruco_debug() -> dict:
+    return app.state.aruco.debug()
 
 
 @app.get("/health")
@@ -240,7 +276,7 @@ def telemetry() -> dict:
 
 @app.websocket("/ws/telemetry")
 async def telemetry_ws(websocket: WebSocket) -> None:
-    await telemetry_stream(websocket, app.state.roomba, app.state.odometry)
+    await telemetry_stream(websocket, app.state.roomba, app.state.odometry, app.state.aruco)
 
 
 @app.websocket("/ws/control")

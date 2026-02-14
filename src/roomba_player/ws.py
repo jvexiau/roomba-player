@@ -4,6 +4,7 @@ import asyncio
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from .aruco import ArucoService
 from .config import settings
 from .odometry import OdometryEstimator
 from .roomba import RoombaOI
@@ -43,7 +44,12 @@ def _guard_drive_with_bumpers(roomba: RoombaOI, velocity: int, radius: int) -> t
     return (int(velocity), int(radius), None)
 
 
-async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI, odometry: OdometryEstimator | None = None) -> None:
+async def telemetry_stream(
+    websocket: WebSocket,
+    roomba: RoombaOI,
+    odometry: OdometryEstimator | None = None,
+    aruco: ArucoService | None = None,
+) -> None:
     await websocket.accept()
     try:
         while True:
@@ -55,6 +61,8 @@ async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI, odometry: Odo
             payload = roomba.get_telemetry_snapshot()
             if odometry is not None:
                 payload["odometry"] = odometry.get_pose()
+            if aruco is not None:
+                payload["aruco"] = aruco.get_last_result()
             await websocket.send_json(payload)
             await asyncio.sleep(settings.telemetry_interval_sec)
     except WebSocketDisconnect:
