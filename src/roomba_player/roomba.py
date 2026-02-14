@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Optional
 
@@ -69,6 +70,9 @@ class RoombaOI:
         self._stream_stop = threading.Event()
         self._stream_thread: Optional[threading.Thread] = None
         self._stream_buffer = bytearray()
+        self._stream_packet_ids: tuple[int, ...] = _STREAM_PACKETS_DEFAULT
+        self._last_stream_update_monotonic = 0.0
+        self._last_stream_start_monotonic = 0.0
 
         self._telemetry_lock = threading.Lock()
         self._telemetry = {
@@ -149,7 +153,9 @@ class RoombaOI:
     def start_sensor_stream(self, packet_ids: tuple[int, ...] = _STREAM_PACKETS_DEFAULT) -> None:
         if not packet_ids:
             raise ValueError("At least one sensor packet id is required.")
+        self._stream_packet_ids = tuple(packet_ids)
         self.write(bytes([_CMD_STREAM, len(packet_ids), *packet_ids]))
+        self._last_stream_start_monotonic = time.monotonic()
         self._start_stream_reader()
 
     def stop_sensor_stream(self) -> None:
@@ -211,6 +217,25 @@ class RoombaOI:
             self._apply_sensor_packet(packet_id, data)
         with self._telemetry_lock:
             self._telemetry["timestamp"] = _now_iso()
+        self._last_stream_update_monotonic = time.monotonic()
+
+    def ensure_sensor_stream(self, max_stale_sec: float = 3.0, restart_cooldown_sec: float = 2.0) -> None:
+        """Best-effort stream watchdog.
+
+        Restarts stream if reader thread is down or no packet has been received for too long.
+        """
+        if not self.connected:
+            return
+        now = time.monotonic()
+        thread_alive = bool(self._stream_thread and self._stream_thread.is_alive())
+        stale = self._last_stream_update_monotonic > 0 and (now - self._last_stream_update_monotonic) > max_stale_sec
+        no_data_yet = self._last_stream_update_monotonic == 0 and (now - self._last_stream_start_monotonic) > max_stale_sec
+        should_restart = (not thread_alive) or stale or no_data_yet
+        if not should_restart:
+            return
+        if self._last_stream_start_monotonic and (now - self._last_stream_start_monotonic) < restart_cooldown_sec:
+            return
+        self.start_sensor_stream(self._stream_packet_ids)
 
     def _apply_sensor_packet(self, packet_id: int, data: bytes) -> None:
         with self._telemetry_lock:

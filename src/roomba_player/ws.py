@@ -19,6 +19,11 @@ async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI) -> None:
     await websocket.accept()
     try:
         while True:
+            try:
+                roomba.ensure_sensor_stream()
+            except Exception:
+                # Keep telemetry loop alive even if stream restart fails transiently.
+                pass
             await websocket.send_json(roomba.get_telemetry_snapshot())
             await asyncio.sleep(settings.telemetry_interval_sec)
     except WebSocketDisconnect:
