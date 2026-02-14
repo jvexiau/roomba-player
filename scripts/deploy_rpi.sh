@@ -48,7 +48,16 @@ SSH_OPTS=( -p "$RPI_PORT" )
 RSYNC_SSH="ssh -p ${RPI_PORT}"
 
 echo "[1/4] Ensure app directory exists on Raspberry Pi"
-ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "mkdir -p ${RPI_APP_DIR}"
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- "$RPI_APP_DIR" <<'REMOTE_MKDIR'
+set -euo pipefail
+APP_DIR="$1"
+if [[ "$APP_DIR" == "~/"* ]]; then
+  APP_DIR="$HOME/${APP_DIR#~/}"
+elif [[ "$APP_DIR" == "~" ]]; then
+  APP_DIR="$HOME"
+fi
+mkdir -p "$APP_DIR"
+REMOTE_MKDIR
 
 if [[ "$RPI_SKIP_SYNC" != "1" ]]; then
   echo "[2/4] Sync code to Raspberry Pi"
@@ -67,45 +76,69 @@ fi
 
 if [[ "$RPI_SKIP_INSTALL" != "1" ]]; then
   echo "[3/4] Install/update Python dependencies on Raspberry Pi"
-  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "bash -lc '
-    set -euo pipefail
-    cd ${RPI_APP_DIR}
-    ${RPI_PYTHON} -m venv .venv
-    . .venv/bin/activate
-    python -m pip install --upgrade pip
-    pip install -e .
-  '"
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- "$RPI_APP_DIR" "$RPI_PYTHON" <<'REMOTE_INSTALL'
+set -euo pipefail
+APP_DIR="$1"
+PYTHON_BIN="$2"
+if [[ "$APP_DIR" == "~/"* ]]; then
+  APP_DIR="$HOME/${APP_DIR#~/}"
+elif [[ "$APP_DIR" == "~" ]]; then
+  APP_DIR="$HOME"
+fi
+cd "$APP_DIR"
+"$PYTHON_BIN" -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
+REMOTE_INSTALL
 else
   echo "[3/4] Install skipped (RPI_SKIP_INSTALL=1)"
 fi
 
 echo "[4/4] Restart roomba-player process on Raspberry Pi"
-ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "bash -lc '
-  set -euo pipefail
-  cd ${RPI_APP_DIR}
-  mkdir -p logs
-  cat > .env <<EOF
-ROOMBA_PLAYER_ROOMBA_SERIAL_PORT=${ROOMBA_SERIAL_PORT}
-ROOMBA_PLAYER_ROOMBA_BAUDRATE=${ROOMBA_BAUDRATE}
-ROOMBA_PLAYER_ROOMBA_TIMEOUT_SEC=${ROOMBA_TIMEOUT_SEC}
-EOF
-  if [ -f roomba-player.pid ]; then
-    OLD_PID=\$(cat roomba-player.pid || true)
-    if [ -n \"\${OLD_PID}\" ] && kill -0 \"\${OLD_PID}\" 2>/dev/null; then
-      kill \"\${OLD_PID}\" || true
-      sleep 1
-    fi
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" bash -s -- \
+  "$RPI_APP_DIR" \
+  "$ROOMBA_SERIAL_PORT" \
+  "$ROOMBA_BAUDRATE" \
+  "$ROOMBA_TIMEOUT_SEC" \
+  "$RPI_BIND_HOST" \
+  "$RPI_BIND_PORT" <<'REMOTE_RESTART'
+set -euo pipefail
+APP_DIR="$1"
+ROOMBA_PORT="$2"
+ROOMBA_BAUD="$3"
+ROOMBA_TIMEOUT="$4"
+BIND_HOST="$5"
+BIND_PORT="$6"
+if [[ "$APP_DIR" == "~/"* ]]; then
+  APP_DIR="$HOME/${APP_DIR#~/}"
+elif [[ "$APP_DIR" == "~" ]]; then
+  APP_DIR="$HOME"
+fi
+cd "$APP_DIR"
+mkdir -p logs
+cat > .env <<ENVCONF
+ROOMBA_PLAYER_ROOMBA_SERIAL_PORT=${ROOMBA_PORT}
+ROOMBA_PLAYER_ROOMBA_BAUDRATE=${ROOMBA_BAUD}
+ROOMBA_PLAYER_ROOMBA_TIMEOUT_SEC=${ROOMBA_TIMEOUT}
+ENVCONF
+if [ -f roomba-player.pid ]; then
+  OLD_PID="$(cat roomba-player.pid || true)"
+  if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
+    kill "${OLD_PID}" || true
+    sleep 1
   fi
-  pkill -f \"uvicorn roomba_player.app:app\" || true
-  . .venv/bin/activate
-  nohup uvicorn roomba_player.app:app --host ${RPI_BIND_HOST} --port ${RPI_BIND_PORT} > logs/server.log 2>&1 &
-  echo \$! > roomba-player.pid
-  sleep 1
-  if ! kill -0 \$(cat roomba-player.pid) 2>/dev/null; then
-    echo \"Process failed to start. Check logs/server.log\" >&2
-    exit 1
-  fi
-'"
+fi
+pkill -f "uvicorn roomba_player.app:app" || true
+. .venv/bin/activate
+nohup uvicorn roomba_player.app:app --host "${BIND_HOST}" --port "${BIND_PORT}" > logs/server.log 2>&1 &
+echo $! > roomba-player.pid
+sleep 1
+if ! kill -0 "$(cat roomba-player.pid)" 2>/dev/null; then
+  echo "Process failed to start. Check logs/server.log" >&2
+  exit 1
+fi
+REMOTE_RESTART
 
 echo "Done. Service is up on http://${RPI_HOST}:${RPI_BIND_PORT}"
 echo "Logs: ssh -p ${RPI_PORT} ${SSH_TARGET} 'tail -f ${RPI_APP_DIR}/logs/server.log'"
