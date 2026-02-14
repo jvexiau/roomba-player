@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     camera_http_bind_host: str = "0.0.0.0"
     camera_http_port: int = 8081
     camera_http_path: str = "/stream.mjpg"
+    plan_default_path: str = ""
+    odometry_history_path: str = "bdd/odometry_history.jsonl"
+    odometry_source: str = "encoders"
+    odometry_linear_scale: float = 1.0
+    odometry_angular_scale: float = 1.0
 
 
 settings = Settings()

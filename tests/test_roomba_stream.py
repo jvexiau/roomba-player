@@ -8,6 +8,12 @@ def test_stream_payload_updates_telemetry() -> None:
         [
             7,
             0x03,  # bumper left+right
+            19,
+            0x00,
+            0x64,  # distance=100mm
+            20,
+            0x00,
+            0x0A,  # angle=10deg
             21,
             0x02,  # full_charging
             25,
@@ -18,6 +24,12 @@ def test_stream_payload_updates_telemetry() -> None:
             0xE8,  # capacity=1000
             34,
             0x02,  # dock visible (home base)
+            43,
+            0x12,
+            0x34,
+            44,
+            0x56,
+            0x78,
         ]
     )
 
@@ -34,3 +46,9 @@ def test_stream_payload_updates_telemetry() -> None:
     assert snapshot["dock_visible"] is True
     assert snapshot["charging_source_home_base"] is True
     assert snapshot["charging_source_internal"] is False
+    assert snapshot["distance_mm"] == 100
+    assert snapshot["angle_deg"] == 10
+    assert snapshot["total_distance_mm"] == 100
+    assert snapshot["total_angle_deg"] == 10
+    assert snapshot["left_encoder_counts"] == 0x1234
+    assert snapshot["right_encoder_counts"] == 0x5678

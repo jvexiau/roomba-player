@@ -1,0 +1,182 @@
+unit: mm
+
+contour:
+  - [-1800, 7740]
+  - [-1800, 4900]
+  - [-1200, 4900]
+  - [-1200, 2460]
+  - [400, 2460]
+  - [400, 1500]
+  - [0, 1500]
+  - [0, 0]
+  - [1170, 0]
+  - [1170, 3900]
+  - [1310, 3900]
+  - [1310, 3740]
+  - [4210, 3740]
+  - [4210, 7740]
+
+start_pose:
+  x_mm: 4200
+  y_mm: 7000
+  theta_deg: 0
+
+object_shapes:
+  canap:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [1840, 0]
+      - [1840, 2430]
+      - [660, 2430]
+      - [660, 890]
+      - [0, 890]
+      - [0, 0]
+  biblio:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [970, 0]
+      - [970, 360]
+      - [0, 360]
+      - [0, 0]
+  etagere_livre:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [400, 0]
+      - [400, 600]
+      - [0, 600]
+      - [0, 0]
+  clim:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [200, 0]
+      - [200, 750]
+      - [0, 750]
+      - [0, 0]
+  aquarium:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [860, 0]
+      - [860, 400]
+      - [0, 400]
+      - [0, 0]
+  commode_livre:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [310, 0]
+      - [310, 1800]
+      - [0, 1800]
+      - [0, 0]
+  chess:
+    unit: mm
+    contour:
+      - [0, 0]
+      - [400, 0]
+      - [400, 400]
+      - [0, 400]
+      - [0, 0]
+
+objects:
+  - id: sofa_main
+    label: "    Canap"
+    shape_ref: canap
+    x_mm: 2340
+    y_mm: 3740
+    theta_deg: 0
+  - id: aquarium
+    label: Aquarium
+    shape_ref: aquarium
+    x_mm: 750
+    y_mm: 7340
+    theta_deg: 0
+  - id: biblio
+    label: Biblio
+    shape_ref: biblio
+    x_mm: 1370
+    y_mm: 3740
+    theta_deg: 0
+  - id: etagere_livre
+    label: "     Etagere"
+    shape_ref: etagere_livre
+    x_mm: 3810
+    y_mm: 6170
+    theta_deg: 0
+  - id: clim
+    label: "     Clim"
+    shape_ref: clim
+    x_mm: 4010
+    y_mm: 6770
+    theta_deg: 0
+  - id: commode_livre
+    label: Livres
+    shape_ref: commode_livre
+    x_mm: -1800
+    y_mm: 5940
+    theta_deg: 0
+  - id: chess
+    label: Chess
+    shape_ref: chess
+    x_mm: -1800
+    y_mm: 5300
+    theta_deg: 0
+
+aruco_markers:
+  - id: 54
+    x_mm: 1200
+    y_mm: 3900
+    theta_deg: 90
+    size_mm: 150
+    front_offset_mm: 600
+    snap_pose:
+      x_mm: 1200
+      y_mm: 4100
+  - id: 9
+    x_mm: 3510
+    y_mm: 7740
+    theta_deg: 180
+    size_mm: 150
+    front_offset_mm: 600
+    snap_pose:
+      x_mm: 3510
+      y_mm: 7540
+  - id: 81
+    x_mm: 3810
+    y_mm: 6470
+    theta_deg: 270
+    size_mm: 150
+    front_offset_mm: 600
+    snap_pose:
+      x_mm: 3610
+      y_mm: 6470
+  - id: 72
+    x_mm: -1010
+    y_mm: 7740
+    theta_deg: 270
+    size_mm: 150
+    front_offset_mm: 600
+    snap_pose:
+      x_mm: -1800
+      y_mm: 7540
+  - id: 18
+    x_mm: 50
+    y_mm: 2460
+    theta_deg: 270
+    size_mm: 150
+    front_offset_mm: 600
+    snap_pose:
+      x_mm: 50
+      y_mm: 2660
+  - id: 63
+    x_mm: 0
+    y_mm: 0
+    theta_deg: 270
+    size_mm: 150
+    front_offset_mm: 600
+    snap_pose:
+      x_mm: 0
+      y_mm: 200

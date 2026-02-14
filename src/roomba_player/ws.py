@@ -5,6 +5,7 @@ import asyncio
 from fastapi import WebSocket, WebSocketDisconnect
 
 from .config import settings
+from .odometry import OdometryEstimator
 from .roomba import RoombaOI
 
 
@@ -15,7 +16,7 @@ def _normalize_radius(radius: int) -> int:
     return max(-2000, min(2000, radius))
 
 
-async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI) -> None:
+async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI, odometry: OdometryEstimator | None = None) -> None:
     await websocket.accept()
     try:
         while True:
@@ -24,13 +25,16 @@ async def telemetry_stream(websocket: WebSocket, roomba: RoombaOI) -> None:
             except Exception:
                 # Keep telemetry loop alive even if stream restart fails transiently.
                 pass
-            await websocket.send_json(roomba.get_telemetry_snapshot())
+            payload = roomba.get_telemetry_snapshot()
+            if odometry is not None:
+                payload["odometry"] = odometry.update_from_telemetry(payload)
+            await websocket.send_json(payload)
             await asyncio.sleep(settings.telemetry_interval_sec)
     except WebSocketDisconnect:
         return
 
 
-def handle_control_message(message: dict, roomba: RoombaOI) -> dict:
+def handle_control_message(message: dict, roomba: RoombaOI, odometry: OdometryEstimator | None = None) -> dict:
     action = str(message.get("action", "")).lower()
     if not action:
         raise ValueError("Missing `action` in message.")
@@ -82,7 +86,7 @@ def handle_control_message(message: dict, roomba: RoombaOI) -> dict:
     raise ValueError(f"Unsupported action: {action}")
 
 
-async def control_stream(websocket: WebSocket, roomba: RoombaOI) -> None:
+async def control_stream(websocket: WebSocket, roomba: RoombaOI, odometry: OdometryEstimator | None = None) -> None:
     await websocket.accept()
     await websocket.send_json(
         {
@@ -95,7 +99,7 @@ async def control_stream(websocket: WebSocket, roomba: RoombaOI) -> None:
         while True:
             message = await websocket.receive_json()
             try:
-                response = handle_control_message(message=message, roomba=roomba)
+                response = handle_control_message(message=message, roomba=roomba, odometry=odometry)
                 await websocket.send_json({"type": "ack", **response})
             except Exception as exc:
                 await websocket.send_json({"type": "error", "ok": False, "error": str(exc)})

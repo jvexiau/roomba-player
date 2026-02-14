@@ -6,10 +6,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from .camera import CameraService
 from .config import settings
+from .history import JsonlHistoryStore
+from .odometry import OdometryEstimator
+from .plan import PlanManager
 from .roomba import RoombaOI
 from .ws import control_stream, telemetry_stream
 
-app = FastAPI(title="roomba-player", version="0.1.0")
+app = FastAPI(title="roomba-player", version="0.2.0")
 
 HOME_PAGE = """<!doctype html>
 <html lang="en">
@@ -89,6 +92,19 @@ PLAYER_PAGE = """<!doctype html>
         <div class="camera-box" id="cameraBox">
           <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
           <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
+        </div>
+      </section>
+      <section class="card">
+        <h2>Salon Map</h2>
+        <div class="toolbar">
+          <button class="btn" id="btnLoadSalon">load plans/salon.yaml</button>
+          <button class="btn" id="btnResetHistory">reset history + start pose</button>
+          <input type="file" id="planFile" accept=".json,application/json" />
+        </div>
+        <p class="small">Odometry pose: <strong id="poseText">x=0 y=0 θ=0°</strong></p>
+        <div style="position:relative;border:1px solid #d4dcec;border-radius:10px;background:#fff;overflow:hidden;">
+          <canvas id="planStaticCanvas" width="900" height="380" style="display:block;width:100%;"></canvas>
+          <canvas id="planRobotCanvas" width="900" height="380" style="position:absolute;inset:0;display:block;width:100%;pointer-events:none;"></canvas>
         </div>
       </section>
 
@@ -201,11 +217,19 @@ PLAYER_PAGE = """<!doctype html>
       const dockStateNode = document.getElementById("dockState");
       const linkStateNode = document.getElementById("linkState");
       const telemetryTsNode = document.getElementById("telemetryTs");
+      const planStaticCanvas = document.getElementById("planStaticCanvas");
+      const planRobotCanvas = document.getElementById("planRobotCanvas");
+      const poseTextNode = document.getElementById("poseText");
+      const planFileInput = document.getElementById("planFile");
 
       let controlWs = null;
       let telemetryWs = null;
       const activeInputs = new Set();
       let lastCommandSignature = "";
+      let currentPlan = null;
+      let planProjection = null;
+      let odomPollTimer = null;
+      let currentOdom = { x_mm: 0, y_mm: 0, theta_deg: 0 };
 
       const buttonByCmd = {
         forward: document.getElementById("joyForward"),
@@ -358,6 +382,140 @@ PLAYER_PAGE = """<!doctype html>
           : `<span class="pill warn">${text}</span>`;
       }
 
+      function rotatePoint(x, y, theta) {
+        const c = Math.cos(theta);
+        const s = Math.sin(theta);
+        return [x * c - y * s, x * s + y * c];
+      }
+
+      function computePlanBounds(plan) {
+        const pts = [...(plan.contour || [])];
+        const shapes = plan.object_shapes || {};
+        for (const obj of plan.objects || []) {
+          const shape = shapes[obj.shape_ref];
+          if (!shape || !Array.isArray(shape.contour)) continue;
+          const theta = ((obj.theta_deg || 0) * Math.PI) / 180;
+          for (const p of shape.contour) {
+            const [rx, ry] = rotatePoint(p[0], p[1], theta);
+            pts.push([rx + (obj.x_mm || 0), ry + (obj.y_mm || 0)]);
+          }
+        }
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        return {
+          minX: Math.min(...xs),
+          maxX: Math.max(...xs),
+          minY: Math.min(...ys),
+          maxY: Math.max(...ys),
+        };
+      }
+
+      function drawPolygon(ctx, points, tx, ty, scale, stroke, fill = null) {
+        if (!points || points.length < 2) return;
+        ctx.beginPath();
+        const p0 = points[0];
+        ctx.moveTo(tx(p0[0], scale), ty(p0[1], scale));
+        for (let i = 1; i < points.length; i += 1) {
+          const p = points[i];
+          ctx.lineTo(tx(p[0], scale), ty(p[1], scale));
+        }
+        ctx.closePath();
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        ctx.strokeStyle = stroke;
+        ctx.stroke();
+      }
+
+      async function refreshPlan() {
+        try {
+          const r = await fetch("/api/plan");
+          const j = await r.json();
+          currentPlan = j.plan || null;
+        } catch (_) {
+          currentPlan = null;
+        }
+        renderStaticPlan();
+        drawRobotPose();
+      }
+
+      function renderStaticPlan() {
+        const ctx = planStaticCanvas.getContext("2d");
+        ctx.clearRect(0, 0, planStaticCanvas.width, planStaticCanvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, planStaticCanvas.width, planStaticCanvas.height);
+        planProjection = null;
+        if (!currentPlan) return;
+
+        const b = computePlanBounds(currentPlan);
+        const pad = 20;
+        const sx = (planStaticCanvas.width - pad * 2) / Math.max(1, b.maxX - b.minX);
+        const sy = (planStaticCanvas.height - pad * 2) / Math.max(1, b.maxY - b.minY);
+        const scale = Math.min(sx, sy);
+        const height = planStaticCanvas.height;
+        const tx = (x, s) => pad + (x - b.minX) * s;
+        const ty = (y, s) => height - pad - (y - b.minY) * s;
+        planProjection = { minX: b.minX, minY: b.minY, pad, scale, height };
+
+        ctx.lineWidth = 2;
+        drawPolygon(ctx, currentPlan.contour, tx, ty, scale, "#334155", "#f8fafc");
+
+        const shapes = currentPlan.object_shapes || {};
+        for (const obj of currentPlan.objects || []) {
+          const shape = shapes[obj.shape_ref];
+          if (!shape) continue;
+          const theta = ((obj.theta_deg || 0) * Math.PI) / 180;
+          const pts = (shape.contour || []).map((p) => {
+            const [rx, ry] = rotatePoint(p[0], p[1], theta);
+            return [rx + (obj.x_mm || 0), ry + (obj.y_mm || 0)];
+          });
+          drawPolygon(ctx, pts, tx, ty, scale, "#94a3b8", "#e2e8f0");
+        }
+      }
+
+      function projectX(x) {
+        return planProjection.pad + (x - planProjection.minX) * planProjection.scale;
+      }
+
+      function projectY(y) {
+        return planProjection.height - planProjection.pad - (y - planProjection.minY) * planProjection.scale;
+      }
+
+      function drawRobotPose() {
+        const ctx = planRobotCanvas.getContext("2d");
+        ctx.clearRect(0, 0, planRobotCanvas.width, planRobotCanvas.height);
+        poseTextNode.textContent = `x=${Math.round(currentOdom.x_mm || 0)} y=${Math.round(currentOdom.y_mm || 0)} θ=${Math.round(currentOdom.theta_deg || 0)}°`;
+        if (!planProjection) return;
+
+        const rx = projectX(currentOdom.x_mm || 0);
+        const ry = projectY(currentOdom.y_mm || 0);
+        const theta = ((currentOdom.theta_deg || 0) * Math.PI) / 180;
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(rx, ry, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx + 18 * Math.cos(theta), ry - 18 * Math.sin(theta));
+        ctx.stroke();
+      }
+
+      async function refreshOdometry() {
+        try {
+          const r = await fetch("/api/odometry");
+          currentOdom = await r.json();
+        } catch (_) {}
+        drawRobotPose();
+      }
+
+      function startOdometryPolling() {
+        if (odomPollTimer) clearInterval(odomPollTimer);
+        refreshOdometry();
+        odomPollTimer = setInterval(refreshOdometry, 120);
+      }
+
       function connectControl() {
         controlWs = new WebSocket(wsUrl("/ws/control"));
         controlWs.onopen = () => { controlStatus.textContent = "control websocket: connected"; };
@@ -424,6 +582,10 @@ PLAYER_PAGE = """<!doctype html>
             setTextPill(dockStateNode, `wall:${wallSeen ? "1" : "0"} dock:${dockVisible ? "1" : "0"}`, wallSeen || dockVisible);
             setPill(linkStateNode, Boolean(data.roomba_connected));
             telemetryTsNode.textContent = String(data.timestamp || "-");
+            if (data.odometry) {
+              currentOdom = data.odometry;
+              drawRobotPose();
+            }
           } catch (_) {
             addLog(`telemetry parse error: ${evt.data}`);
           }
@@ -438,6 +600,48 @@ PLAYER_PAGE = """<!doctype html>
       document.getElementById("btnStop").addEventListener("click", () => {
         activeInputs.clear();
         applyDriveFromInputs("button-stop");
+      });
+      document.getElementById("btnLoadSalon").addEventListener("click", async () => {
+        try {
+          const r = await fetch("/api/plan/load-file", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: "plans/salon.yaml" }),
+          });
+          const j = await r.json();
+          addLog(`plan/load-file -> ${JSON.stringify(j)}`);
+          await refreshPlan();
+        } catch (_) {
+          addLog("plan/load-file failed");
+        }
+      });
+      document.getElementById("btnResetHistory").addEventListener("click", async () => {
+        try {
+          const r = await fetch("/api/odometry/reset-history", { method: "POST" });
+          const j = await r.json();
+          addLog(`odometry/reset-history -> ${JSON.stringify(j)}`);
+          await refreshOdometry();
+        } catch (_) {
+          addLog("odometry/reset-history failed");
+        }
+      });
+      planFileInput.addEventListener("change", async (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const plan = JSON.parse(text);
+          const r = await fetch("/api/plan/load-json", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(plan),
+          });
+          const j = await r.json();
+          addLog(`plan/load-json -> ${JSON.stringify(j)}`);
+          await refreshPlan();
+        } catch (_) {
+          addLog("plan/load-json failed");
+        }
       });
       document.getElementById("btnCenterStop").addEventListener("click", () => {
         activeInputs.clear();
@@ -491,6 +695,8 @@ PLAYER_PAGE = """<!doctype html>
       startCameraIfEnabled();
       connectControl();
       connectTelemetry();
+      refreshPlan();
+      startOdometryPolling();
     </script>
   </body>
 </html>
@@ -504,6 +710,14 @@ def startup() -> None:
         baudrate=settings.roomba_baudrate,
         timeout=settings.roomba_timeout_sec,
     )
+    app.state.odometry_history = JsonlHistoryStore(settings.odometry_history_path)
+    app.state.odometry = OdometryEstimator(
+        history_sink=app.state.odometry_history.append,
+        source=settings.odometry_source,
+        linear_scale=settings.odometry_linear_scale,
+        angular_scale=settings.odometry_angular_scale,
+    )
+    app.state.plan = PlanManager()
     app.state.camera = CameraService(
         enabled=settings.camera_stream_enabled,
         width=settings.camera_width,
@@ -519,6 +733,31 @@ def startup() -> None:
         http_port=settings.camera_http_port,
         http_path=settings.camera_http_path,
     )
+    restored_pose = app.state.odometry_history.last_pose()
+    if restored_pose:
+        app.state.odometry.reset(
+            x_mm=restored_pose.get("x_mm", 0),
+            y_mm=restored_pose.get("y_mm", 0),
+            theta_deg=restored_pose.get("theta_deg", 0),
+        )
+
+    if settings.plan_default_path:
+        try:
+            loaded = app.state.plan.load_from_file(settings.plan_default_path)
+            if not restored_pose:
+                start_pose = (loaded or {}).get("start_pose") or {}
+                telemetry = app.state.roomba.get_telemetry_snapshot()
+                app.state.odometry.reset(
+                    x_mm=start_pose.get("x_mm", 0),
+                    y_mm=start_pose.get("y_mm", 0),
+                    theta_deg=start_pose.get("theta_deg", 0),
+                    base_total_distance_mm=telemetry.get("total_distance_mm"),
+                    base_total_angle_deg=telemetry.get("total_angle_deg"),
+                    base_left_encoder_counts=telemetry.get("left_encoder_counts"),
+                    base_right_encoder_counts=telemetry.get("right_encoder_counts"),
+                )
+        except Exception:
+            pass
 
 
 @app.on_event("shutdown")
@@ -577,16 +816,115 @@ def health() -> dict:
     return {"status": "ok", "service": settings.service_name}
 
 
+def _plan_start_pose() -> dict:
+    plan = app.state.plan.get() or {}
+    start_pose = plan.get("start_pose") or {}
+    return {
+        "x_mm": start_pose.get("x_mm", 0),
+        "y_mm": start_pose.get("y_mm", 0),
+        "theta_deg": start_pose.get("theta_deg", 0),
+    }
+
+
+@app.get("/api/plan")
+def get_plan() -> dict:
+    return {"plan": app.state.plan.get()}
+
+
+@app.post("/api/plan/load-file")
+def load_plan_file(payload: dict) -> dict:
+    path = str(payload.get("path", "")).strip()
+    if not path:
+        return {"ok": False, "error": "missing_path"}
+    try:
+        plan = app.state.plan.load_from_file(path)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    start_pose = (plan or {}).get("start_pose") or {}
+    telemetry = app.state.roomba.get_telemetry_snapshot()
+    app.state.odometry.reset(
+        x_mm=start_pose.get("x_mm", 0),
+        y_mm=start_pose.get("y_mm", 0),
+        theta_deg=start_pose.get("theta_deg", 0),
+        base_total_distance_mm=telemetry.get("total_distance_mm"),
+        base_total_angle_deg=telemetry.get("total_angle_deg"),
+        base_left_encoder_counts=telemetry.get("left_encoder_counts"),
+        base_right_encoder_counts=telemetry.get("right_encoder_counts"),
+    )
+    return {"ok": True}
+
+
+@app.post("/api/plan/load-json")
+def load_plan_json(payload: dict) -> dict:
+    try:
+        plan = app.state.plan.load_from_json(payload)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    start_pose = (plan or {}).get("start_pose") or {}
+    telemetry = app.state.roomba.get_telemetry_snapshot()
+    app.state.odometry.reset(
+        x_mm=start_pose.get("x_mm", 0),
+        y_mm=start_pose.get("y_mm", 0),
+        theta_deg=start_pose.get("theta_deg", 0),
+        base_total_distance_mm=telemetry.get("total_distance_mm"),
+        base_total_angle_deg=telemetry.get("total_angle_deg"),
+        base_left_encoder_counts=telemetry.get("left_encoder_counts"),
+        base_right_encoder_counts=telemetry.get("right_encoder_counts"),
+    )
+    return {"ok": True}
+
+
+@app.get("/api/odometry")
+def get_odometry() -> dict:
+    app.state.odometry.update_from_telemetry(app.state.roomba.get_telemetry_snapshot())
+    return app.state.odometry.get_pose()
+
+
+@app.post("/api/odometry/reset")
+def reset_odometry(payload: dict | None = None) -> dict:
+    data = payload or {}
+    telemetry = app.state.roomba.get_telemetry_snapshot()
+    app.state.odometry.reset(
+        x_mm=data.get("x_mm", 0),
+        y_mm=data.get("y_mm", 0),
+        theta_deg=data.get("theta_deg", 0),
+        base_total_distance_mm=telemetry.get("total_distance_mm"),
+        base_total_angle_deg=telemetry.get("total_angle_deg"),
+        base_left_encoder_counts=telemetry.get("left_encoder_counts"),
+        base_right_encoder_counts=telemetry.get("right_encoder_counts"),
+    )
+    return {"ok": True, **app.state.odometry.get_pose()}
+
+
+@app.post("/api/odometry/reset-history")
+def reset_odometry_history() -> dict:
+    app.state.odometry_history.clear()
+    telemetry = app.state.roomba.get_telemetry_snapshot()
+    start_pose = _plan_start_pose()
+    app.state.odometry.reset(
+        x_mm=start_pose.get("x_mm", 0),
+        y_mm=start_pose.get("y_mm", 0),
+        theta_deg=start_pose.get("theta_deg", 0),
+        base_total_distance_mm=telemetry.get("total_distance_mm"),
+        base_total_angle_deg=telemetry.get("total_angle_deg"),
+        base_left_encoder_counts=telemetry.get("left_encoder_counts"),
+        base_right_encoder_counts=telemetry.get("right_encoder_counts"),
+    )
+    return {"ok": True, "history_cleared": True, **app.state.odometry.get_pose()}
+
+
 @app.get("/telemetry")
 def telemetry() -> dict:
-    return app.state.roomba.get_telemetry_snapshot()
+    payload = app.state.roomba.get_telemetry_snapshot()
+    payload["odometry"] = app.state.odometry.update_from_telemetry(payload)
+    return payload
 
 
 @app.websocket("/ws/telemetry")
 async def telemetry_ws(websocket: WebSocket) -> None:
-    await telemetry_stream(websocket, app.state.roomba)
+    await telemetry_stream(websocket, app.state.roomba, app.state.odometry)
 
 
 @app.websocket("/ws/control")
 async def control_ws(websocket: WebSocket) -> None:
-    await control_stream(websocket, app.state.roomba)
+    await control_stream(websocket, app.state.roomba, app.state.odometry)

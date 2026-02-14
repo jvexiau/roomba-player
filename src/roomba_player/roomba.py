@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 try:
@@ -27,7 +27,7 @@ _RADIUS_INPLACE_CW = -1
 _RADIUS_INPLACE_CCW = 1
 
 _STREAM_HEADER = 19
-_STREAM_PACKETS_DEFAULT = (7, 8, 9, 10, 11, 12, 21, 25, 26, 34)
+_STREAM_PACKETS_DEFAULT = (7, 8, 9, 10, 11, 12, 19, 20, 21, 25, 26, 34, 43, 44)
 
 _PACKET_SIZE = {
     7: 1,   # bumps and wheel drops
@@ -36,10 +36,14 @@ _PACKET_SIZE = {
     10: 1,  # cliff front left
     11: 1,  # cliff front right
     12: 1,  # cliff right
+    19: 2,  # distance (mm, signed)
+    20: 2,  # angle (deg, signed)
     21: 1,  # charging state
     25: 2,  # battery charge (mAh)
     26: 2,  # battery capacity (mAh)
     34: 1,  # charging sources available (home base bit)
+    43: 2,  # left encoder counts (unsigned)
+    44: 2,  # right encoder counts (unsigned)
 }
 
 _CHARGING_STATE = {
@@ -59,7 +63,7 @@ def _int16_bytes(value: int) -> bytes:
 
 
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 class RoombaOI:
@@ -102,6 +106,12 @@ class RoombaOI:
             "battery_charge_mah": 0,
             "battery_capacity_mah": 0,
             "charging_state_code": 0,
+            "distance_mm": 0,
+            "angle_deg": 0,
+            "total_distance_mm": 0,
+            "total_angle_deg": 0,
+            "left_encoder_counts": 0,
+            "right_encoder_counts": 0,
         }
 
     @property
@@ -280,6 +290,14 @@ class RoombaOI:
                 self._telemetry["cliff_front_right"] = bool(data[0])
             elif packet_id == 12:
                 self._telemetry["cliff_right"] = bool(data[0])
+            elif packet_id == 19:
+                distance_mm = int.from_bytes(data, "big", signed=True)
+                self._telemetry["distance_mm"] = distance_mm
+                self._telemetry["total_distance_mm"] = int(self._telemetry.get("total_distance_mm", 0)) + distance_mm
+            elif packet_id == 20:
+                angle_deg = int.from_bytes(data, "big", signed=True)
+                self._telemetry["angle_deg"] = angle_deg
+                self._telemetry["total_angle_deg"] = int(self._telemetry.get("total_angle_deg", 0)) + angle_deg
             elif packet_id == 21:
                 code = int(data[0])
                 self._telemetry["charging_state_code"] = code
@@ -294,6 +312,10 @@ class RoombaOI:
                 self._telemetry["charging_source_internal"] = bool(bits & 0x01)
                 self._telemetry["charging_source_home_base"] = bool(bits & 0x02)
                 self._telemetry["dock_visible"] = bool(bits & 0x02)
+            elif packet_id == 43:
+                self._telemetry["left_encoder_counts"] = int.from_bytes(data, "big", signed=False)
+            elif packet_id == 44:
+                self._telemetry["right_encoder_counts"] = int.from_bytes(data, "big", signed=False)
 
             capacity = int(self._telemetry.get("battery_capacity_mah", 0) or 0)
             charge = int(self._telemetry.get("battery_charge_mah", 0) or 0)

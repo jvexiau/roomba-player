@@ -1,8 +1,8 @@
-# roomba-player
+# roomba-player v0.2.0
 
-> **FR**: Plateforme Python pour piloter, visualiser, monitorer et auto-piloter un Roomba via Raspberry Pi.
+> **FR**: Plateforme Python pour piloter et monitorer un Roomba via Raspberry Pi, avec interface web temps réel, caméra optionnelle, plan du salon et odométrie persistée.
 >
-> **EN**: Python platform to control, visualize, monitor, and auto-drive a Roomba through a Raspberry Pi.
+> **EN**: Python platform to control and monitor a Roomba via Raspberry Pi, with real-time web UI, optional camera stream, room plan, and persisted odometry.
 
 ## Project provenance / Provenance du code
 
@@ -10,16 +10,30 @@
 
 **EN**: This program is developed only with Codex, with no direct human intervention in code writing.
 
+## Features
+
+- Web control page: `/player` (joystick + clavier AZERTY `zqsd`)
+- Real-time sensors via `WS /ws/telemetry`
+- Control protocol via `WS /ws/control`
+- Camera stream (optional): `rpicam-vid` + `ffmpeg` -> `/camera/stream`
+- Plan loading (`JSON`/`YAML`) and map rendering
+- Odometry from wheel encoders (Roomba 760 friendly)
+- Odometry history persisted in `bdd/odometry_history.jsonl`
+- Last known pose restored on service restart
+- Reset history + reset pose to plan start from `/player`
+
 ## Requirements / Prérequis
 
 ### Python modules
 
-Installed by project install:
+Installed with `pip install -e .`:
 - `fastapi`
 - `uvicorn`
+- `websockets`
 - `pydantic`
 - `pydantic-settings`
 - `python-dotenv`
+- `PyYAML`
 - `pyserial`
 
 Dev tools:
@@ -39,11 +53,6 @@ Dev tools:
 - `rpicam-vid`
 - `ffmpeg`
 
-### Hardware
-
-- Raspberry Pi connected to Roomba through USB serial adapter (OI pin)
-- Typical serial device: `/dev/ttyUSB0` or `/dev/ttyACM0`
-
 ## Local run (optional) / Lancement local (optionnel)
 
 ```bash
@@ -54,130 +63,90 @@ cp .env.example .env
 uvicorn roomba_player.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Deploy to Raspberry Pi (from PC) / Déployer sur Raspberry Pi (depuis le PC)
+## Plans and map / Plans et carte
 
-Run all `make` commands from the repository root on your PC.
+- Runtime plans are stored in `plans/` (ignored by git).
+- Example plan is tracked: `examples/salon.yaml`.
+- Plan APIs:
+  - `GET /api/plan`
+  - `POST /api/plan/load-file` with `{"path":"plans/salon.yaml"}`
+  - `POST /api/plan/load-json` with a full plan payload
 
-### Step 1: Prepare deploy config / Préparer la config de déploiement
+Expected top-level plan fields:
+- `unit`
+- `contour`
+- `start_pose`
+- `object_shapes`
+- `objects`
+- `aruco_markers` (optional)
+
+## Odometry and history / Odométrie et historique
+
+- Default odometry source: wheel encoders (`left_encoder_counts`, `right_encoder_counts`)
+- History file: `bdd/odometry_history.jsonl` (append-only)
+- Last pose is restored at startup if history exists
+- API:
+  - `GET /api/odometry`
+  - `POST /api/odometry/reset`
+  - `POST /api/odometry/reset-history` (clear history + reset to current plan `start_pose`)
+
+## Deploy to Raspberry Pi / Déploiement Raspberry Pi
+
+### 1) Configure deployment
 
 ```bash
 cp .env.rpi.example .env.rpi
+mkdir -p plans
+cp examples/salon.yaml plans/salon.yaml
 ```
 
-Edit `.env.rpi` and set at least:
+Set at least in `.env.rpi`:
 - `RPI_HOST`
 - `RPI_USER`
-- `RPI_PORT` (if not 22)
+- `RPI_PORT`
 - `RPI_APP_DIR`
 - `ROOMBA_SERIAL_PORT`
 - `ROOMBA_BAUDRATE`
 - `ROOMBA_TIMEOUT_SEC`
-- `CAMERA_STREAM_ENABLED` (`true` / `false`)
-- `CAMERA_WIDTH` (example `800`)
-- `CAMERA_HEIGHT` (example `600`)
-- `CAMERA_FRAMERATE` (example `15`)
-- `CAMERA_PROFILE` (example `high`)
-- `CAMERA_SHUTTER` (example `12000`)
-- `CAMERA_DENOISE` (example `cdn_fast`)
-- `CAMERA_SHARPNESS` (example `1.1`)
-- `CAMERA_AWB` (example `auto`)
-- `CAMERA_H264_TCP_PORT` (example `9100`)
-- `CAMERA_HTTP_BIND_HOST` (example `0.0.0.0`)
-- `CAMERA_HTTP_PORT` (example `8081`)
-- `CAMERA_HTTP_PATH` (example `/stream.mjpg`)
+- `PLAN_DEFAULT_PATH` (recommended: `plans/salon.yaml`)
+- `CAMERA_STREAM_ENABLED` (`true` or `false`)
+- `ODOMETRY_HISTORY_PATH` (default: `bdd/odometry_history.jsonl`)
 
-Notes:
-- `.env.rpi` is a local file on your PC (not committed to Git).
-- You can use another file with `ENV_FILE=/path/to/file make deploy-rpi`.
-
-### Step 2: Deploy + install dependencies + restart / Déployer + installer + redémarrer
+### 2) Deploy and restart
 
 ```bash
 make deploy-rpi
 ```
 
-What this does:
-1. Syncs code to Raspberry Pi
-2. Creates/updates remote virtualenv
-3. Installs Python dependencies (`pip install -e .`)
-4. Writes remote `.env`
-5. Stops previous process if running and starts `uvicorn`
-
-If `pyproject.toml` dependencies changed, run `make update-rpi` once.
-
-### Optional: Force update pip libraries / Optionnel: forcer la mise à jour des libs pip
+### 3) Optional dependency upgrade
 
 ```bash
 make update-rpi
 ```
 
-This command does the same deployment flow, but forces:
-- `pip install --upgrade setuptools wheel`
-- `pip install --upgrade -e .`
-
-Default `make deploy-rpi` does not upgrade pip libraries.
-
-### Step 3: Follow logs / Suivre les logs
+### 4) Logs / restart only
 
 ```bash
 make logs-rpi
-```
-
-### Step 4: Restart only / Redémarrage seul
-
-```bash
 make restart-rpi
 ```
 
-## API endpoints
+## Endpoints summary
 
+- `GET /`
+- `GET /player`
 - `GET /health`
 - `GET /telemetry`
-- `GET /player`
 - `POST /camera/start`
 - `GET /camera/stream`
 - `WS /ws/telemetry`
 - `WS /ws/control`
-
-## Player page (`/player`)
-
-- Real-time sensors from Roomba OI stream.
-- Manual control with joystick buttons and AZERTY keyboard (`z`,`q`,`s`,`d`).
-- Hold-to-move and stop on release.
-- Speed slider (default `250`).
-- Optional camera stream shown on top (pipeline: `rpicam-vid` + `ffmpeg` -> MJPEG HTTP).
-- Camera starts automatically from `/player` (no manual `curl` required).
-
-## WebSocket control protocol
-
-Client message format:
-
-```json
-{"action":"init"}
-```
-
-Supported actions:
-- `ping`
-- `init`
-- `mode` with `value: safe|full`
-- `drive` with `velocity` and `radius`
-- `stop`
-- `clean`
-- `dock`
-
-Example:
-
-```json
-{"action":"init"}
-{"action":"drive","velocity":120,"radius":32768}
-{"action":"stop"}
-```
-
-## Safety notes / Notes de sécurité
-
-- Start with wheels lifted for first movement tests.
-- Use `safe` mode first.
-- Keep `stop` readily available.
+- `GET /api/plan`
+- `POST /api/plan/load-file`
+- `POST /api/plan/load-json`
+- `GET /api/odometry`
+- `POST /api/odometry/reset`
+- `POST /api/odometry/reset-history`
 
 ## License
 

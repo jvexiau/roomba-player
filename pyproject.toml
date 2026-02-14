@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roomba-player"
-version = "0.1.0"
+version = "0.2.0"
 description = "Roomba control, monitoring and autopilot platform"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,6 +18,7 @@ dependencies = [
   "pydantic>=2.8.0",
   "pydantic-settings>=2.4.0",
   "python-dotenv>=1.0.1",
+  "PyYAML>=6.0.1",
   "pyserial>=3.5"
 ]
 

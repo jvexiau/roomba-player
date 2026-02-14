@@ -20,6 +20,10 @@ env/
 !.env.example
 !.env.rpi.example
 
+# Local plan files (deployed, not versioned)
+plans/
+bdd/
+
 # Tool caches
 .pytest_cache/
 .mypy_cache/
