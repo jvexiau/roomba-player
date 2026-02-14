@@ -12,6 +12,12 @@
 
 ## Features
 
+- Web assets split by responsibility:
+  - `src/roomba_player/web/home.html`
+  - `src/roomba_player/web/player.html`
+  - `src/roomba_player/web/static/*.css`
+  - `src/roomba_player/web/static/*.js`
+- Static assets served with cache-busting hash query (`?v=<hash>`).
 - Web control page: `/player` (joystick + clavier AZERTY `zqsd`)
 - Real-time sensors via `WS /ws/telemetry`
 - Control protocol via `WS /ws/control`

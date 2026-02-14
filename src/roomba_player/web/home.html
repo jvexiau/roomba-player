@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>roomba-player</title>
+    <link rel="stylesheet" href="/static/home.css?v=__ASSET_VERSION__" />
+  </head>
+  <body>
+    <h1>roomba-player</h1>
+    <p>Control, monitor and auto-pilot a Roomba from Raspberry Pi over HTTP/WebSocket.</p>
+
+    <h2>Current API</h2>
+    <ul>
+      <li><code>GET /health</code></li>
+      <li><code>GET /telemetry</code></li>
+      <li><code>WS /ws/telemetry</code></li>
+      <li><code>WS /ws/control</code></li>
+      <li><code>GET /player</code></li>
+    </ul>
+
+    <a class="btn" href="/player">Open Player</a>
+  </body>
+</html>

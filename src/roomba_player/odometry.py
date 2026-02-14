@@ -18,6 +18,7 @@ class OdometryEstimator:
         self,
         history_sink: HistorySink | None = None,
         source: str = "encoders",
+        mm_per_tick: float = _MM_PER_TICK,
         linear_scale: float = 1.0,
         angular_scale: float = 1.0,
     ) -> None:
@@ -33,6 +34,7 @@ class OdometryEstimator:
         self._last_delta_distance_mm = 0.0
         self._last_delta_angle_deg = 0.0
         self._source = str(source).strip().lower() or "encoders"
+        self._mm_per_tick = float(mm_per_tick)
         self._linear_scale = float(linear_scale)
         self._angular_scale = float(angular_scale)
 
@@ -186,8 +188,8 @@ class OdometryEstimator:
         self._last_left_encoder_counts = left_counts
         self._last_right_encoder_counts = right_counts
 
-        delta_left_mm = delta_left_counts * _MM_PER_TICK
-        delta_right_mm = delta_right_counts * _MM_PER_TICK
+        delta_left_mm = delta_left_counts * self._mm_per_tick
+        delta_right_mm = delta_right_counts * self._mm_per_tick
         return delta_left_mm, delta_right_mm
 
     def get_pose(self) -> dict:

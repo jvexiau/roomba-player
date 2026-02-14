@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     plan_default_path: str = ""
     odometry_history_path: str = "bdd/odometry_history.jsonl"
     odometry_source: str = "encoders"
+    odometry_mm_per_tick: float = 0.445
     odometry_linear_scale: float = 1.0
     odometry_angular_scale: float = 1.0
 

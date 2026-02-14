@@ -1,0 +1,3 @@
+body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem; line-height: 1.4; max-width: 900px; }
+code { background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 4px; }
+.btn { display: inline-block; margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 8px; border: 1px solid #222; text-decoration: none; color: #111; }

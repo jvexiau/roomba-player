@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>roomba-player / player</title>
+    <link rel="stylesheet" href="/static/player.css?v=__ASSET_VERSION__" />
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Player</h1>
+      <p class="small">Keyboard AZERTY: Z forward, S backward, Q left, D right. Hold to move, release to stop.</p>
+      <section class="camera-wrap">
+        <div class="camera-box" id="cameraBox">
+          <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
+          <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
+        </div>
+      </section>
+      <section class="card">
+        <h2>Salon Map</h2>
+        <div class="toolbar">
+          <button class="btn" id="btnLoadSalon">load plans/salon.yaml</button>
+          <button class="btn" id="btnResetHistory">reset history + start pose</button>
+          <input type="file" id="planFile" accept=".json,application/json" />
+        </div>
+        <p class="small">Odometry pose: <strong id="poseText">x=0 y=0 θ=0°</strong></p>
+        <div class="plan-stack">
+          <canvas id="planStaticCanvas" width="900" height="380"></canvas>
+          <canvas id="planRobotCanvas" width="900" height="380"></canvas>
+        </div>
+      </section>
+
+      <div class="grid">
+        <section class="card">
+          <h2>Control</h2>
+          <div class="status" id="ctrlStatus">control websocket: connecting...</div>
+          <div class="toolbar">
+            <button class="btn" id="btnInit">init</button>
+            <button class="btn" id="btnSafe">mode safe</button>
+            <button class="btn" id="btnFull">mode full</button>
+            <button class="btn" id="btnClean">clean</button>
+            <button class="btn" id="btnDock">dock</button>
+            <button class="btn" id="btnStop">stop</button>
+          </div>
+
+          <div class="speed">
+            <input id="speedSlider" type="range" min="80" max="320" step="10" value="250" />
+            <strong><span id="speedValue">250</span></strong>
+          </div>
+
+          <div class="joy">
+            <div></div>
+            <button class="btn hold" data-cmd="forward" id="joyForward">↑</button>
+            <div></div>
+            <button class="btn hold" data-cmd="left" id="joyLeft">←</button>
+            <button class="btn" id="btnCenterStop">■</button>
+            <button class="btn hold" data-cmd="right" id="joyRight">→</button>
+            <div></div>
+            <button class="btn hold" data-cmd="backward" id="joyBackward">↓</button>
+            <div></div>
+          </div>
+
+          <p class="small">Active inputs: <strong id="activeInputs">none</strong></p>
+          <p class="small">Executed command: <strong id="executedCommand">stop</strong></p>
+        </section>
+
+        <section class="card">
+          <h2>Live Sensors</h2>
+          <div class="status" id="telemetryStatus">telemetry websocket: connecting...</div>
+          <div class="telemetry">
+            <div class="metric">
+              <div class="k">Battery</div>
+              <div class="v"><span id="batteryPct">0</span>%</div>
+              <div class="bar"><span id="batteryBar" style="width: 0%"></span></div>
+            </div>
+            <div class="metric">
+              <div class="k">State</div>
+              <div class="v" id="robotState">unknown</div>
+            </div>
+            <div class="metric">
+              <div class="k">Bumpers</div>
+              <div class="v" id="bumperState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Wheel drops</div>
+              <div class="v" id="wheelDropState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Cliff sensors</div>
+              <div class="v" id="cliffState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Charging source</div>
+              <div class="v" id="chargingSourceState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Wall + dock</div>
+              <div class="v" id="dockState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Roomba link</div>
+              <div class="v" id="linkState"><span class="pill warn">unknown</span></div>
+            </div>
+            <div class="metric">
+              <div class="k">Timestamp</div>
+              <div class="v" id="telemetryTs">-</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Realtime log</h2>
+          <pre id="log"></pre>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      window.ROOMBA_PLAYER_CONFIG = {
+        cameraEnabled: __CAMERA_ENABLED__,
+      };
+    </script>
+    <script src="/static/player-state.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-utils.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-map.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-camera.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-controls.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-telemetry.js?v=__ASSET_VERSION__"></script>
+    <script src="/static/player-main.js?v=__ASSET_VERSION__"></script>
+  </body>
+</html>
