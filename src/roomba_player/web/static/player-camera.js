@@ -19,22 +19,21 @@
       }
     };
 
+    const reloadStream = () => {
+      const sep = baseUrl.includes("?") ? "&" : "?";
+      RP.refs.cameraFeed.src = `${baseUrl}${sep}t=${Date.now()}`;
+    };
+
     const scheduleRetry = () => {
       if (retryTimer) return;
       retryTimer = setTimeout(() => {
         retryTimer = null;
         ensureStarted().finally(() => {
-          const sep = baseUrl.includes("?") ? "&" : "?";
-          RP.refs.cameraFeed.src = `${baseUrl}${sep}t=${Date.now()}`;
+          reloadStream();
         });
       }, 1200);
     };
 
-    await ensureStarted();
-    RP.refs.cameraMessage.textContent = "Camera stream loading...";
-    RP.refs.cameraFeed.src = `${baseUrl}?t=${Date.now()}`;
-    RP.refs.cameraFeed.style.display = "block";
-    if (RP.refs.cameraOverlay) RP.refs.cameraOverlay.style.display = "block";
     RP.refs.cameraFeed.onload = () => {
       RP.refs.cameraMessage.style.display = "none";
       if (RP.aruco && typeof RP.aruco.resizeOverlay === "function") {
@@ -46,6 +45,14 @@
       RP.refs.cameraMessage.textContent = "Camera stream unavailable (retrying...)";
       scheduleRetry();
     };
+
+    await ensureStarted();
+    RP.refs.cameraMessage.style.display = "block";
+    RP.refs.cameraMessage.textContent = "Camera stream loading...";
+    RP.refs.cameraFeed.style.display = "block";
+    if (RP.refs.cameraOverlay) RP.refs.cameraOverlay.style.display = "block";
+    reloadStream();
+
     window.addEventListener("resize", () => {
       if (RP.aruco && typeof RP.aruco.resizeOverlay === "function") {
         RP.aruco.resizeOverlay();

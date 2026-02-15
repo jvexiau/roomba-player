@@ -8,52 +8,13 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Player</h1>
-      <p class="small">Keyboard AZERTY: Z forward, S backward, Q left, D right. Hold to move, release to stop.</p>
-      <div class="top-grid">
-        <section class="camera-wrap card">
-          <h2>Camera</h2>
-          <div class="camera-box" id="cameraBox">
-            <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
-            <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
-            <canvas id="cameraOverlay" style="display:none;"></canvas>
-          </div>
-          <p class="small">ArUco: <strong id="arucoStatus">disabled</strong></p>
-        </section>
-        <section class="card">
-          <h2>Salon Map</h2>
-          <div class="toolbar">
-            <button class="btn" id="btnLoadSalon">load plans/salon.yaml</button>
-            <button class="btn" id="btnResetHistory">reset history + start pose</button>
-            <input type="file" id="planFile" accept=".json,application/json" />
-          </div>
-          <p class="small">Odometry pose: <strong id="poseText">x=0 y=0 θ=0°</strong></p>
-          <div class="plan-stack">
-            <canvas id="planStaticCanvas" width="900" height="380"></canvas>
-            <canvas id="planRobotCanvas" width="900" height="380"></canvas>
-          </div>
-        </section>
-      </div>
-
-      <div class="grid">
-        <section class="card card-control">
-          <h2>Control</h2>
-          <div class="status" id="ctrlStatus">control websocket: connecting...</div>
-          <div class="toolbar">
-            <button class="btn" id="btnInit">init</button>
-            <button class="btn" id="btnSafe">mode safe</button>
-            <button class="btn" id="btnFull">mode full</button>
-            <button class="btn" id="btnClean">clean</button>
-            <button class="btn" id="btnDock">dock</button>
-            <button class="btn" id="btnStop">stop</button>
-          </div>
-
-          <div class="speed">
-            <input id="speedSlider" type="range" min="80" max="320" step="10" value="250" />
-            <strong><span id="speedValue">250</span></strong>
-          </div>
-
-          <div class="joy">
+      <div class="page-head">
+        <div>
+          <h1>Player</h1>
+          <p class="small">Keyboard AZERTY: Z forward, S backward, Q left, D right. Hold to move, release to stop.</p>
+        </div>
+        <section class="joy-dock" aria-label="Joystick quick controls">
+          <div class="joy joy-mini">
             <div></div>
             <button class="btn hold" data-cmd="forward" id="joyForward">↑</button>
             <div></div>
@@ -64,55 +25,104 @@
             <button class="btn hold" data-cmd="backward" id="joyBackward">↓</button>
             <div></div>
           </div>
-
-          <p class="small">Active inputs: <strong id="activeInputs">none</strong></p>
-          <p class="small">Executed command: <strong id="executedCommand">stop</strong></p>
         </section>
+      </div>
 
-        <section class="card card-sensors">
-          <h2>Live Sensors</h2>
-          <div class="status" id="telemetryStatus">telemetry websocket: connecting...</div>
-          <div class="telemetry">
-            <div class="metric">
-              <div class="k">Battery</div>
-              <div class="v"><span id="batteryPct">0</span>%</div>
-              <div class="bar"><span id="batteryBar" style="width: 0%"></span></div>
+      <div class="top-grid">
+        <div class="top-left-stack">
+          <section class="camera-wrap card">
+            <h2>Camera</h2>
+            <div class="camera-box" id="cameraBox">
+              <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
+              <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
+              <canvas id="cameraOverlay" style="display:none;"></canvas>
             </div>
-            <div class="metric">
-              <div class="k">State</div>
-              <div class="v" id="robotState">unknown</div>
-            </div>
-            <div class="metric">
-              <div class="k">Bumpers</div>
-              <div class="v" id="bumperState"><span class="pill warn">unknown</span></div>
-            </div>
-            <div class="metric">
-              <div class="k">Wheel drops</div>
-              <div class="v" id="wheelDropState"><span class="pill warn">unknown</span></div>
-            </div>
-            <div class="metric">
-              <div class="k">Cliff sensors</div>
-              <div class="v" id="cliffState"><span class="pill warn">unknown</span></div>
-            </div>
-            <div class="metric">
-              <div class="k">Charging source</div>
-              <div class="v" id="chargingSourceState"><span class="pill warn">unknown</span></div>
-            </div>
-            <div class="metric">
-              <div class="k">Wall + dock</div>
-              <div class="v" id="dockState"><span class="pill warn">unknown</span></div>
-            </div>
-            <div class="metric">
-              <div class="k">Roomba link</div>
-              <div class="v" id="linkState"><span class="pill warn">unknown</span></div>
-            </div>
-            <div class="metric">
-              <div class="k">Timestamp</div>
-              <div class="v" id="telemetryTs">-</div>
-            </div>
-          </div>
-        </section>
+            <p class="small">ArUco: <strong id="arucoStatus">disabled</strong></p>
+          </section>
 
+          <section class="card card-control">
+            <h2>Control</h2>
+            <div class="status" id="ctrlStatus">control websocket: connecting...</div>
+            <div class="toolbar">
+              <button class="btn" id="btnInit">init</button>
+              <button class="btn" id="btnSafe">mode safe</button>
+              <button class="btn" id="btnFull">mode full</button>
+              <button class="btn" id="btnClean">clean</button>
+              <button class="btn" id="btnDock">dock</button>
+              <button class="btn" id="btnStop">stop</button>
+            </div>
+
+            <div class="speed">
+              <input id="speedSlider" type="range" min="80" max="320" step="10" value="250" />
+              <strong><span id="speedValue">250</span></strong>
+            </div>
+
+            <p class="small">Active inputs: <strong id="activeInputs">none</strong></p>
+            <p class="small">Executed command: <strong id="executedCommand">stop</strong></p>
+          </section>
+        </div>
+        <div class="top-right-stack">
+          <section class="card map-card">
+            <h2>Salon Map</h2>
+            <div class="toolbar">
+              <button class="btn" id="btnLoadSalon">load plans/salon.yaml</button>
+              <button class="btn" id="btnResetHistory">reset history + start pose</button>
+              <input type="file" id="planFile" accept=".json,application/json" />
+            </div>
+            <p class="small">Odometry pose: <strong id="poseText">x=0 y=0 θ=0°</strong></p>
+            <div class="plan-stack">
+              <canvas id="planStaticCanvas" width="900" height="380"></canvas>
+              <canvas id="planRobotCanvas" width="900" height="380"></canvas>
+            </div>
+          </section>
+
+          <section class="card sensors-card">
+            <h2>Live Sensors</h2>
+            <div class="status" id="telemetryStatus">telemetry websocket: connecting...</div>
+            <div class="telemetry">
+              <div class="metric">
+                <div class="k">Battery</div>
+                <div class="v"><span id="batteryPct">0</span>%</div>
+                <div class="bar"><span id="batteryBar" style="width: 0%"></span></div>
+              </div>
+              <div class="metric">
+                <div class="k">State</div>
+                <div class="v" id="robotState">unknown</div>
+              </div>
+              <div class="metric">
+                <div class="k">Bumpers</div>
+                <div class="v" id="bumperState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Wheel drops</div>
+                <div class="v" id="wheelDropState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Cliff sensors</div>
+                <div class="v" id="cliffState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Charging source</div>
+                <div class="v" id="chargingSourceState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Wall + dock</div>
+                <div class="v" id="dockState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Roomba link</div>
+                <div class="v" id="linkState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Timestamp</div>
+                <div class="v" id="telemetryTs">-</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="bottom-grid">
         <section class="card card-log">
           <h2>Realtime log</h2>
           <pre id="log"></pre>
