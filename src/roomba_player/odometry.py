@@ -23,7 +23,7 @@ class OdometryEstimator:
         mm_per_tick: float = _MM_PER_TICK,
         linear_scale: float = 1.0,
         angular_scale: float = 1.0,
-        collision_margin_scale: float = 0.55,
+        collision_margin_scale: float = 1.0,
     ) -> None:
         self._lock = Lock()
         self._x_mm = 0.0
