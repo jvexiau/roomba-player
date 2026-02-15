@@ -23,6 +23,84 @@
     return { x: Math.cos(theta), y: Math.sin(theta) };
   }
 
+  function markerObservedSizePx(marker) {
+    const pts = Array.isArray(marker && marker.corners) ? marker.corners : [];
+    if (pts.length !== 4) return null;
+    const edges = [];
+    for (let i = 0; i < 4; i += 1) {
+      const a = pts[i];
+      const b = pts[(i + 1) % 4];
+      edges.push(Math.hypot(Number(b[0] || 0) - Number(a[0] || 0), Number(b[1] || 0) - Number(a[1] || 0)));
+    }
+    if (!edges.length) return null;
+    return edges.reduce((acc, v) => acc + v, 0) / edges.length;
+  }
+
+  function markerShapeMetrics(marker) {
+    const pts = Array.isArray(marker && marker.corners) ? marker.corners : [];
+    if (pts.length !== 4) return { shapeCos: 1, shapeYawDeg: 0, widthPx: 0, heightPx: 0 };
+    const p = pts.map((it) => [Number(it[0] || 0), Number(it[1] || 0)]);
+    const e01 = Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1]);
+    const e12 = Math.hypot(p[2][0] - p[1][0], p[2][1] - p[1][1]);
+    const e23 = Math.hypot(p[3][0] - p[2][0], p[3][1] - p[2][1]);
+    const e30 = Math.hypot(p[0][0] - p[3][0], p[0][1] - p[3][1]);
+    const widthPx = 0.5 * (e01 + e23);
+    const heightPx = 0.5 * (e12 + e30);
+    if (widthPx <= 1e-6 || heightPx <= 1e-6) return { shapeCos: 1, shapeYawDeg: 0, widthPx, heightPx };
+    const shapeCos = Math.max(0.08, Math.min(1, Math.min(widthPx, heightPx) / Math.max(widthPx, heightPx)));
+    const yawAbsDeg = (Math.acos(Math.max(0, Math.min(1, shapeCos))) * 180) / Math.PI;
+    const lrDiff = e12 - e30;
+    const shapeYawDeg = Math.abs(lrDiff) < 1e-3 ? 0 : (lrDiff > 0 ? yawAbsDeg : -yawAbsDeg);
+    return { shapeCos, shapeYawDeg, widthPx, heightPx };
+  }
+
+  function markerEstimate(markerCfg, marker, frameWidth) {
+    if (!markerCfg) return null;
+    const axis = markerAxis(markerCfg);
+    if (!axis) return null;
+    const markerX = Number(markerCfg.x_mm || 0);
+    const markerY = Number(markerCfg.y_mm || 0);
+    const areaPx = Math.max(0, Number(marker.area_px || 0));
+    const focalPx = Math.max(1, Number(RP.config.arucoFocalPx || 900));
+    const sizeMm = Math.max(10, Number(markerCfg.size_mm || (Number(RP.config.arucoMarkerSizeCm || 15) * 10)));
+    const markerPx = markerObservedSizePx(marker);
+    const shape = markerShapeMetrics(marker);
+
+    let estDist = Number(markerCfg.front_offset_mm || 250);
+    if (areaPx > 1) {
+      const areaAnchor = 3253 * ((sizeMm / 150) ** 2);
+      estDist = 150 * (sizeMm / 150) * Math.sqrt(Math.max(1, areaAnchor) / areaPx);
+      estDist *= Math.sqrt(shape.shapeCos);
+    } else if (markerPx && markerPx > 1) {
+      estDist = ((focalPx * sizeMm) / markerPx) * 0.18;
+    }
+    estDist = Math.max(70, Math.min(2500, estDist));
+
+    const targetX = markerX + axis.x * estDist;
+    const targetY = markerY + axis.y * estDist;
+    const baseHeading = (Math.atan2(-axis.y, -axis.x) * 180) / Math.PI;
+    const center = Array.isArray(marker.center) ? marker.center : [frameWidth * 0.5, 0];
+    const cx = Number(center[0] || (frameWidth * 0.5));
+    const fw = Math.max(1, Number(frameWidth || 1));
+    let proximity = 0;
+    if (areaPx > 1) proximity = Math.max(0, Math.min(1, areaPx / 3253));
+    else if (markerPx) proximity = Math.max(0, Math.min(1, (markerPx - 20) / 120));
+    const headingOffset = ((cx / fw) - 0.5) * (8.0 * (0.2 * (1 - proximity)));
+    const shapeHeadingCorrection = shape.shapeYawDeg * (0.33 * (1 - 0.5 * proximity));
+    const targetTheta = normalizeAngleDeg(baseHeading + headingOffset + shapeHeadingCorrection);
+    return {
+      estDist,
+      targetX,
+      targetY,
+      targetTheta,
+      markerPx,
+      shapeCos: shape.shapeCos,
+      shapeYawDeg: shape.shapeYawDeg,
+      widthPx: shape.widthPx,
+      heightPx: shape.heightPx,
+    };
+  }
+
   function computeArucoPairEstimate(aruco) {
     if (!aruco || !aruco.ok) return null;
     const plan = RP.state.currentPlan;
@@ -131,6 +209,7 @@
       RP.state.arucoHadDetection = false;
       RP.state.arucoLogSignature = "inactive";
       RP.state.arucoPairLogSignature = "";
+      RP.state.arucoFrameLogKey = "";
       return;
     }
     if (!aruco.ok) {
@@ -142,9 +221,50 @@
       RP.state.arucoHadDetection = false;
       RP.state.arucoLogSignature = sig;
       RP.state.arucoPairLogSignature = "";
+      RP.state.arucoFrameLogKey = "";
       return;
     }
     const markers = Array.isArray(aruco.markers) ? aruco.markers : [];
+    const markerKey = markers
+      .map((m) => `${Number(m && m.id)}:${Math.round(Number((m && m.area_px) || 0))}`)
+      .sort()
+      .join(",");
+    const frameKey = `${String(aruco.timestamp || "none")}|${Number(aruco.frame_width || 0)}x${Number(aruco.frame_height || 0)}|${markerKey}`;
+    if (frameKey !== RP.state.arucoFrameLogKey) {
+      const frameW = Number(aruco.frame_width || 0);
+      const frameH = Number(aruco.frame_height || 0);
+      RP.utils.addLog(`aruco frame ts=${String(aruco.timestamp || "-")} size=${frameW}x${frameH} markers=${markers.length}`);
+      const plan = RP.state.currentPlan;
+      const cfgById = new Map();
+      if (plan && Array.isArray(plan.aruco_markers)) {
+        for (const cfg of plan.aruco_markers) {
+          const id = Number(cfg && cfg.id);
+          if (Number.isFinite(id)) cfgById.set(id, cfg);
+        }
+      }
+      for (const marker of markers) {
+        const id = Number(marker && marker.id);
+        if (!Number.isFinite(id)) continue;
+        const center = Array.isArray(marker.center) ? marker.center : [0, 0];
+        const areaPx = Number(marker.area_px || 0);
+        const cfg = cfgById.get(id);
+        const est = markerEstimate(cfg, marker, frameW);
+        if (!cfg || !est) {
+          RP.utils.addLog(
+            `  - id=${id} center=(${Number(center[0] || 0).toFixed(1)},${Number(center[1] || 0).toFixed(1)}) area=${Math.round(areaPx)} (no plan marker cfg)`
+          );
+          continue;
+        }
+        const odom = RP.state.currentOdom || { x_mm: 0, y_mm: 0 };
+        const dx = est.targetX - Number(odom.x_mm || 0);
+        const dy = est.targetY - Number(odom.y_mm || 0);
+        const dd = Math.hypot(dx, dy);
+        RP.utils.addLog(
+          `  - id=${id} center=(${Number(center[0] || 0).toFixed(1)},${Number(center[1] || 0).toFixed(1)}) area=${Math.round(areaPx)} pxSize=${(est.markerPx || 0).toFixed(1)} shapeCos=${est.shapeCos.toFixed(3)} shapeYaw=${est.shapeYawDeg.toFixed(1)}deg estDist=${Math.round(est.estDist)}mm estPose=(${Math.round(est.targetX)},${Math.round(est.targetY)},${Math.round(est.targetTheta)}deg) relToOdom=(${Math.round(dx)},${Math.round(dy)} d=${Math.round(dd)}mm)`
+        );
+      }
+      RP.state.arucoFrameLogKey = frameKey;
+    }
     const ids = markers
       .map((m) => Number(m && m.id))
       .filter((v) => Number.isFinite(v))

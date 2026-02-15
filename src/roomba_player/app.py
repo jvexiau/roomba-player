@@ -80,6 +80,40 @@ def _aruco_observed_size_px(marker: dict) -> float | None:
     return float(sum(edges) / len(edges))
 
 
+def _aruco_shape_metrics(marker: dict) -> tuple[float, float]:
+    """Return (cos_obliquity, signed_yaw_deg_from_shape).
+
+    - cos_obliquity ~= 1 for frontal square, ~= 0 when very side-on.
+    - signed_yaw_deg_from_shape uses left/right edge asymmetry as sign.
+    """
+    corners = marker.get("corners")
+    if not (isinstance(corners, list) and len(corners) == 4):
+        return (1.0, 0.0)
+    try:
+        pts = [(float(p[0]), float(p[1])) for p in corners]
+    except Exception:
+        return (1.0, 0.0)
+    e01 = math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1])
+    e12 = math.hypot(pts[2][0] - pts[1][0], pts[2][1] - pts[1][1])  # right edge
+    e23 = math.hypot(pts[3][0] - pts[2][0], pts[3][1] - pts[2][1])
+    e30 = math.hypot(pts[0][0] - pts[3][0], pts[0][1] - pts[3][1])  # left edge
+
+    width_px = 0.5 * (e01 + e23)
+    height_px = 0.5 * (e12 + e30)
+    if width_px <= 1e-6 or height_px <= 1e-6:
+        return (1.0, 0.0)
+    cos_obliquity = max(0.08, min(1.0, min(width_px, height_px) / max(width_px, height_px)))
+    yaw_abs_deg = math.degrees(math.acos(max(0.0, min(1.0, cos_obliquity))))
+
+    # Signed using perspective asymmetry: nearer vertical side appears longer.
+    lr_diff = e12 - e30
+    if abs(lr_diff) < 1e-3:
+        yaw_signed_deg = 0.0
+    else:
+        yaw_signed_deg = yaw_abs_deg if lr_diff > 0.0 else -yaw_abs_deg
+    return (cos_obliquity, yaw_signed_deg)
+
+
 def _aruco_marker_size_mm(marker_cfg: dict) -> float:
     try:
         size_mm = float(marker_cfg.get("size_mm", 0.0) or 0.0)
@@ -179,6 +213,10 @@ def _compute_aruco_pair_target_pose(
     marker_size_mm = 0.5 * (_aruco_marker_size_mm(marker_a_cfg) + _aruco_marker_size_mm(marker_b_cfg))
     marker_a_px = _aruco_observed_size_px(marker_a)
     marker_b_px = _aruco_observed_size_px(marker_b)
+    shape_cos_a, shape_yaw_a = _aruco_shape_metrics(marker_a)
+    shape_cos_b, shape_yaw_b = _aruco_shape_metrics(marker_b)
+    avg_shape_cos = max(0.08, min(1.0, 0.5 * (shape_cos_a + shape_cos_b)))
+    avg_shape_yaw = 0.5 * (shape_yaw_a + shape_yaw_b)
     side_px_values = [v for v in (marker_a_px, marker_b_px) if isinstance(v, float) and v > 1.0]
     area_a = float(marker_a.get("area_px", 0.0) or 0.0)
     area_b = float(marker_b.get("area_px", 0.0) or 0.0)
@@ -191,6 +229,8 @@ def _compute_aruco_pair_target_pose(
     d_area = None
     if avg_area > 1.0:
         d_area = (focal_px * marker_size_mm) / max(1.0, math.sqrt(avg_area))
+        # Area shrinks with oblique views; compensate using shape-derived obliquity.
+        d_area *= math.sqrt(avg_shape_cos)
 
     target_dist = d_pair
     if d_size is not None:
@@ -212,10 +252,18 @@ def _compute_aruco_pair_target_pose(
     proximity = max(0.0, min(1.0, avg_area / max(1.0, area_anchor)))
     heading_offset_gain = float(settings.aruco_heading_gain_deg) * (0.25 * (1.0 - proximity))
     heading_offset = ((pair_cx / fw) - 0.5) * heading_offset_gain
-    target_theta = _normalize_angle_deg(base_heading + heading_offset)
+    shape_heading_correction = avg_shape_yaw * (0.22 * (1.0 - 0.5 * proximity))
+    target_theta = _normalize_angle_deg(base_heading + heading_offset + shape_heading_correction)
 
-    pos_blend = max(0.92, min(1.0, 0.9 + 0.14 * proximity))
-    theta_blend = max(0.94, min(1.0, 0.9 + 0.2 * proximity))
+    frontal_snap = avg_shape_cos >= (0.96 - 0.08 * proximity)
+    if frontal_snap:
+        # If the pair looks frontal (near-square projection), force a hard "in-front" snap.
+        target_theta = _normalize_angle_deg(base_heading)
+        pos_blend = 1.0
+        theta_blend = 1.0
+    else:
+        pos_blend = max(0.92, min(1.0, 0.9 + 0.14 * proximity))
+        theta_blend = max(0.94, min(1.0, 0.9 + 0.2 * proximity))
     return (target_x, target_y, target_theta, pos_blend, theta_blend)
 
 
@@ -229,10 +277,13 @@ def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int)
     marker_px = _aruco_observed_size_px(marker)
     area_px = float(marker.get("area_px", 0.0) or 0.0)
     size_mm = _aruco_marker_size_mm(marker_cfg)
+    shape_cos, shape_yaw = _aruco_shape_metrics(marker)
     if area_px > 1.0:
         area_anchor = 3253.0 * ((size_mm / 150.0) ** 2)
         # Keep area-based estimate for close-range behavior, normalized by tag size.
         target_dist = 150.0 * (size_mm / 150.0) * math.sqrt(max(1.0, area_anchor) / area_px)
+        # Area shrinks with oblique views; compensate using shape-derived obliquity.
+        target_dist *= math.sqrt(shape_cos)
         target_dist = max(70.0, min(2500.0, target_dist))
     elif marker_px is not None and marker_px > 1.0:
         est_dist = (float(settings.aruco_focal_px) * size_mm) / marker_px
@@ -255,11 +306,19 @@ def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int)
         proximity = 0.0
     heading_offset_gain = float(settings.aruco_heading_gain_deg) * (0.2 * (1.0 - proximity))
     heading_offset = ((cx / fw) - 0.5) * heading_offset_gain
-    target_theta = _normalize_angle_deg(base_heading + heading_offset)
+    shape_heading_correction = shape_yaw * (0.33 * (1.0 - 0.5 * proximity))
+    target_theta = _normalize_angle_deg(base_heading + heading_offset + shape_heading_correction)
 
-    # Drastic correction profile: always strong, and near-hard snap when close.
-    pos_blend = max(0.9, min(1.0, 0.88 + 0.2 * proximity))
-    theta_blend = max(0.9, min(1.0, 0.86 + 0.25 * proximity))
+    frontal_snap = shape_cos >= (0.96 - 0.08 * proximity)
+    if frontal_snap:
+        # Near-perfect square => robot is likely facing the tag: hard snap to frontal heading.
+        target_theta = _normalize_angle_deg(base_heading)
+        pos_blend = 1.0
+        theta_blend = 1.0
+    else:
+        # Drastic correction profile: always strong, and near-hard snap when close.
+        pos_blend = max(0.9, min(1.0, 0.88 + 0.2 * proximity))
+        theta_blend = max(0.9, min(1.0, 0.86 + 0.25 * proximity))
     return (target_x, target_y, target_theta, pos_blend, theta_blend)
 
 
