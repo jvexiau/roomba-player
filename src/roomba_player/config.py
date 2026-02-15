@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     service_name: str = "roomba-player"
-    telemetry_interval_sec: float = 0.5
+    telemetry_interval_sec: float = 0.1
     roomba_serial_port: str = "/dev/ttyUSB0"
     roomba_baudrate: int = 115200
     roomba_timeout_sec: float = 1.0
@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     odometry_mm_per_tick: float = 0.445
     odometry_linear_scale: float = 1.0
     odometry_angular_scale: float = 1.0
+    odometry_robot_radius_mm: float = 180.0
 
 
 settings = Settings()

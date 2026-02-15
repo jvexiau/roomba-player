@@ -133,6 +133,22 @@ def test_bump_freezes_encoder_odometry_step() -> None:
     assert round(pose["y_mm"], 3) == 0.0
 
 
+def test_bump_blocks_forward_but_keeps_rotation() -> None:
+    odom = OdometryEstimator(source="encoders")
+    odom.reset(0, 0, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    pose = odom.update_from_telemetry(
+        {
+            "left_encoder_counts": 900,
+            "right_encoder_counts": 1100,
+            "bump_right": True,
+            "timestamp": "t1",
+        }
+    )
+    assert round(pose["x_mm"], 3) == 0.0
+    assert round(pose["y_mm"], 3) == 0.0
+    assert abs(pose["theta_deg"]) > 0.1
+
+
 def test_encoder_mode_applies_linear_scale() -> None:
     odom_a = OdometryEstimator(source="encoders", linear_scale=1.0)
     odom_b = OdometryEstimator(source="encoders", linear_scale=0.5)
@@ -141,3 +157,60 @@ def test_encoder_mode_applies_linear_scale() -> None:
     pose_a = odom_a.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
     pose_b = odom_b.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
     assert pose_b["x_mm"] < pose_a["x_mm"]
+
+
+def test_collision_guard_blocks_motion_when_touching_room_wall() -> None:
+    odom = OdometryEstimator(source="encoders")
+    odom.set_collision_plan(
+        {
+            "contour": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]],
+            "objects": [],
+        },
+        robot_radius_mm=100,
+    )
+    odom.reset(900, 500, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    pose = odom.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
+    assert round(pose["x_mm"], 3) == 900.0
+    assert round(pose["y_mm"], 3) == 500.0
+
+
+def test_collision_guard_prevents_crossing_object_polygon() -> None:
+    odom = OdometryEstimator(source="encoders")
+    odom.set_collision_plan(
+        {
+            "contour": [[0, 0], [1200, 0], [1200, 1000], [0, 1000]],
+            "object_shapes": {
+                "block": {
+                    "contour": [[0, 0], [200, 0], [200, 200], [0, 200]],
+                }
+            },
+            "objects": [
+                {
+                    "shape_ref": "block",
+                    "x_mm": 500,
+                    "y_mm": 400,
+                    "theta_deg": 0,
+                }
+            ],
+        },
+        robot_radius_mm=80,
+    )
+    odom.reset(300, 500, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    pose = odom.update_from_telemetry({"left_encoder_counts": 2000, "right_encoder_counts": 2000, "timestamp": "t1"})
+    assert pose["x_mm"] <= 420.0
+    assert round(pose["y_mm"], 3) == 500.0
+
+
+def test_collision_guard_slides_along_wall() -> None:
+    odom = OdometryEstimator(source="encoders")
+    odom.set_collision_plan(
+        {
+            "contour": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]],
+            "objects": [],
+        },
+        robot_radius_mm=50,
+    )
+    odom.reset(200, 940, 45, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    pose = odom.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
+    assert pose["x_mm"] > 230.0
+    assert pose["y_mm"] <= 951.0

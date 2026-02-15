@@ -82,6 +82,9 @@ class RoombaOI:
         self._stream_packet_ids: tuple[int, ...] = _STREAM_PACKETS_DEFAULT
         self._last_stream_update_monotonic = 0.0
         self._last_stream_start_monotonic = 0.0
+        self._last_drive_velocity = 0
+        self._last_drive_radius = 0
+        self._bumper_hard_stop_latched = False
 
         self._telemetry_lock = threading.Lock()
         self._frame_callback: Callable[[dict], None] | None = None
@@ -177,6 +180,8 @@ class RoombaOI:
             radius = max(-2000, min(2000, radius))
         command = bytes([_CMD_DRIVE]) + _int16_bytes(velocity) + _int16_bytes(radius)
         self.write(command)
+        self._last_drive_velocity = velocity
+        self._last_drive_radius = radius
 
     def stop(self) -> None:
         self.drive(0, 0)
@@ -277,6 +282,7 @@ class RoombaOI:
         self.start_sensor_stream(self._stream_packet_ids)
 
     def _apply_sensor_packet(self, packet_id: int, data: bytes) -> None:
+        hard_stop = False
         with self._telemetry_lock:
             if packet_id == 7:
                 bits = data[0]
@@ -292,6 +298,12 @@ class RoombaOI:
                 self._telemetry["wheel_drop_right"] = wheel_drop_right
                 self._telemetry["wheel_drop_caster"] = wheel_drop_caster
                 self._telemetry["bumper"] = bump_left or bump_right
+                bump_active = bump_left or bump_right
+                if not bump_active:
+                    self._bumper_hard_stop_latched = False
+                elif self._last_drive_velocity > 0 and not self._bumper_hard_stop_latched:
+                    self._bumper_hard_stop_latched = True
+                    hard_stop = True
             elif packet_id == 8:
                 self._telemetry["wall_seen"] = bool(data[0])
             elif packet_id == 9:
@@ -333,3 +345,8 @@ class RoombaOI:
             charge = int(self._telemetry.get("battery_charge_mah", 0) or 0)
             if capacity > 0:
                 self._telemetry["battery_pct"] = max(0, min(100, int((charge * 100) / capacity)))
+        if hard_stop:
+            try:
+                self.stop()
+            except Exception:
+                pass

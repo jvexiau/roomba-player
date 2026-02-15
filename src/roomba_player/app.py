@@ -45,6 +45,13 @@ def _render_template(filename: str, replacements: dict[str, str]) -> str:
     return html
 
 
+def _apply_plan_collision_constraints(plan: dict | None) -> None:
+    app.state.odometry.set_collision_plan(
+        plan=plan,
+        robot_radius_mm=settings.odometry_robot_radius_mm,
+    )
+
+
 @app.on_event("startup")
 def startup() -> None:
     app.state.roomba = RoombaOI(
@@ -83,6 +90,7 @@ def startup() -> None:
         dictionary_name=settings.aruco_dictionary,
     )
     app.state.aruco.start()
+    app.state.odometry.set_collision_plan(None, robot_radius_mm=settings.odometry_robot_radius_mm)
 
     restored_pose = app.state.odometry_history.last_pose()
     if restored_pose:
@@ -95,6 +103,7 @@ def startup() -> None:
     if settings.plan_default_path:
         try:
             loaded = app.state.plan.load_from_file(settings.plan_default_path)
+            _apply_plan_collision_constraints(loaded)
             if not restored_pose:
                 start_pose = (loaded or {}).get("start_pose") or {}
                 app.state.odometry.reset(
@@ -215,6 +224,7 @@ def load_plan_file(payload: dict) -> dict:
         plan = app.state.plan.load_from_file(path)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+    _apply_plan_collision_constraints(plan)
     start_pose = (plan or {}).get("start_pose") or {}
     app.state.odometry.reset(
         x_mm=start_pose.get("x_mm", 0),
@@ -230,6 +240,7 @@ def load_plan_json(payload: dict) -> dict:
         plan = app.state.plan.load_from_json(payload)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+    _apply_plan_collision_constraints(plan)
     start_pose = (plan or {}).get("start_pose") or {}
     app.state.odometry.reset(
         x_mm=start_pose.get("x_mm", 0),

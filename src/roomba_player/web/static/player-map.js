@@ -1,5 +1,10 @@
 (function () {
   const RP = window.RP;
+  const defaultPose = { x_mm: 0, y_mm: 0, theta_deg: 0 };
+  let targetPose = { ...defaultPose };
+  let renderPose = { ...defaultPose };
+  let animLoopStarted = false;
+  let lastAnimTs = 0;
 
   function computePlanBounds(plan) {
     const pts = [].concat(plan.contour || []);
@@ -52,11 +57,18 @@
     }
   }
 
-  function drawRobotPose() {
+  function normalizeAngleDeg(angle) {
+    let a = Number(angle || 0);
+    while (a > 180) a -= 360;
+    while (a < -180) a += 360;
+    return a;
+  }
+
+  function drawRobotPoseFrom(pose) {
     const c = RP.refs.planRobotCanvas;
     const ctx = c.getContext("2d");
     ctx.clearRect(0, 0, c.width, c.height);
-    const odom = RP.state.currentOdom || { x_mm: 0, y_mm: 0, theta_deg: 0 };
+    const odom = pose || defaultPose;
     RP.refs.poseTextNode.textContent = `x=${Math.round(odom.x_mm || 0)} y=${Math.round(odom.y_mm || 0)} θ=${Math.round(odom.theta_deg || 0)}°`;
     const p = RP.state.planProjection;
     if (!p) return;
@@ -74,6 +86,43 @@
     ctx.stroke();
   }
 
+  function animationTick(ts) {
+    if (!lastAnimTs) lastAnimTs = ts;
+    const dt = Math.max(0.001, Math.min(0.05, (ts - lastAnimTs) / 1000));
+    lastAnimTs = ts;
+    const posAlpha = 1 - Math.exp(-16 * dt);
+    const angAlpha = 1 - Math.exp(-18 * dt);
+    renderPose.x_mm += (targetPose.x_mm - renderPose.x_mm) * posAlpha;
+    renderPose.y_mm += (targetPose.y_mm - renderPose.y_mm) * posAlpha;
+    const dTheta = normalizeAngleDeg(targetPose.theta_deg - renderPose.theta_deg);
+    renderPose.theta_deg = normalizeAngleDeg(renderPose.theta_deg + dTheta * angAlpha);
+    drawRobotPoseFrom(renderPose);
+    window.requestAnimationFrame(animationTick);
+  }
+
+  function ensureAnimationLoop() {
+    if (animLoopStarted) return;
+    animLoopStarted = true;
+    window.requestAnimationFrame(animationTick);
+  }
+
+  function setTargetPose(odom) {
+    const next = odom || defaultPose;
+    targetPose = {
+      x_mm: Number(next.x_mm || 0),
+      y_mm: Number(next.y_mm || 0),
+      theta_deg: Number(next.theta_deg || 0),
+    };
+    if (!animLoopStarted) {
+      renderPose = { ...targetPose };
+    }
+  }
+
+  function drawRobotPose() {
+    setTargetPose(RP.state.currentOdom || defaultPose);
+    drawRobotPoseFrom(renderPose);
+  }
+
   async function refreshPlan() {
     try {
       const r = await fetch("/api/plan");
@@ -83,10 +132,13 @@
       RP.state.currentPlan = null;
     }
     renderStaticPlan();
-    drawRobotPose();
+    setTargetPose(RP.state.currentOdom || defaultPose);
+    drawRobotPoseFrom(renderPose);
+    ensureAnimationLoop();
   }
 
   RP.map = {
+    setTargetPose,
     drawRobotPose,
     refreshPlan,
   };

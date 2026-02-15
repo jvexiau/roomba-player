@@ -52,3 +52,26 @@ def test_stream_payload_updates_telemetry() -> None:
     assert snapshot["total_angle_deg"] == 10
     assert snapshot["left_encoder_counts"] == 0x1234
     assert snapshot["right_encoder_counts"] == 0x5678
+
+
+def test_bumper_hard_stop_triggers_immediately_and_latches() -> None:
+    roomba = RoombaOI(port="/dev/null", baudrate=115200, timeout=1.0)
+    roomba._last_drive_velocity = 200
+    stops = {"count": 0}
+
+    def fake_stop():
+        stops["count"] += 1
+        roomba._last_drive_velocity = 0
+
+    roomba.stop = fake_stop  # type: ignore[method-assign]
+
+    roomba._apply_stream_payload(bytes([7, 0x01]))  # bump right
+    assert stops["count"] == 1
+
+    roomba._apply_stream_payload(bytes([7, 0x01]))  # still bumping
+    assert stops["count"] == 1
+
+    roomba._apply_stream_payload(bytes([7, 0x00]))  # bump cleared
+    roomba._last_drive_velocity = 150
+    roomba._apply_stream_payload(bytes([7, 0x02]))  # bump left, new event
+    assert stops["count"] == 2

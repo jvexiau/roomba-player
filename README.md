@@ -132,6 +132,7 @@ Set at least in `.env.rpi`:
 - `ODOMETRY_HISTORY_PATH` (default: `bdd/odometry_history.jsonl`)
 - `ODOMETRY_SOURCE` (default: `encoders`)
 - `ODOMETRY_MM_PER_TICK` (default: `0.445`)
+- `ODOMETRY_ROBOT_RADIUS_MM` (default: `180.0`, used to clamp odometry near walls/objects)
 
 ### 2) Deploy and restart
 

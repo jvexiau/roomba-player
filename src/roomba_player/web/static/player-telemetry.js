@@ -63,7 +63,11 @@
 
         if (data.odometry) {
           RP.state.currentOdom = data.odometry;
-          RP.map.drawRobotPose();
+          if (RP.map && typeof RP.map.setTargetPose === "function") {
+            RP.map.setTargetPose(data.odometry);
+          } else {
+            RP.map.drawRobotPose();
+          }
         }
         if (RP.aruco && typeof RP.aruco.updateFromTelemetry === "function") {
           RP.aruco.updateFromTelemetry(data.aruco || null);
