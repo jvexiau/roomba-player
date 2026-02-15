@@ -85,6 +85,26 @@
       });
       RP.utils.drawPolygon(ctx, pts, tx, ty, scale, "#94a3b8", "#e2e8f0");
     }
+
+    const arucoMarkers = Array.isArray(plan.aruco_markers) ? plan.aruco_markers : [];
+    if (arucoMarkers.length) {
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "bottom";
+      for (const marker of arucoMarkers) {
+        const mx = Number(marker.x_mm || 0);
+        const my = Number(marker.y_mm || 0);
+        const id = marker.id != null ? String(marker.id) : "?";
+        const sx = tx(mx, scale);
+        const sy = ty(my, scale);
+        ctx.fillStyle = "#0f766e";
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#134e4a";
+        ctx.fillText(id, sx + 4, sy - 2);
+      }
+    }
   }
 
   function normalizeAngleDeg(angle) {

@@ -54,7 +54,7 @@ async def telemetry_stream(
     try:
         while True:
             try:
-                roomba.ensure_sensor_stream()
+                roomba.ensure_sensor_stream(max_stale_sec=1.2, restart_cooldown_sec=0.8)
             except Exception:
                 # Keep telemetry loop alive even if stream restart fails transiently.
                 pass

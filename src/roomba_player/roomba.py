@@ -82,6 +82,9 @@ class RoombaOI:
         self._stream_packet_ids: tuple[int, ...] = _STREAM_PACKETS_DEFAULT
         self._last_stream_update_monotonic = 0.0
         self._last_stream_start_monotonic = 0.0
+        self._last_stream_restart_monotonic = 0.0
+        self._stream_restart_count = 0
+        self._last_stream_error = ""
         self._last_drive_velocity = 0
         self._last_drive_radius = 0
         self._bumper_hard_stop_latched = False
@@ -126,6 +129,15 @@ class RoombaOI:
         with self._telemetry_lock:
             payload = dict(self._telemetry)
         payload["roomba_connected"] = self.connected
+        now = time.monotonic()
+        payload["sensor_stream_alive"] = bool(self._stream_thread and self._stream_thread.is_alive())
+        payload["sensor_stream_last_update_age_sec"] = (
+            None
+            if self._last_stream_update_monotonic <= 0
+            else round(max(0.0, now - self._last_stream_update_monotonic), 3)
+        )
+        payload["sensor_stream_restart_count"] = int(self._stream_restart_count)
+        payload["sensor_stream_last_error"] = self._last_stream_error
         return payload
 
     def set_frame_callback(self, callback: Callable[[dict], None] | None) -> None:
@@ -140,6 +152,7 @@ class RoombaOI:
         with self._telemetry_lock:
             self._telemetry["roomba_connected"] = True
             self._telemetry["timestamp"] = _now_iso()
+        self._last_stream_error = ""
 
     def close(self) -> None:
         self.stop_sensor_stream()
@@ -150,6 +163,7 @@ class RoombaOI:
             self._telemetry["roomba_connected"] = False
             self._telemetry["state"] = "disconnected"
             self._telemetry["timestamp"] = _now_iso()
+        self._last_stream_error = ""
 
     def write(self, payload: bytes) -> None:
         with self._lock:
@@ -193,6 +207,7 @@ class RoombaOI:
         self.write(bytes([_CMD_STREAM, len(packet_ids), *packet_ids]))
         self._last_stream_start_monotonic = time.monotonic()
         self._start_stream_reader()
+        self._last_stream_error = ""
 
     def stop_sensor_stream(self) -> None:
         self._stream_stop.set()
@@ -205,6 +220,22 @@ class RoombaOI:
                 self.write(bytes([_CMD_PAUSE_RESUME_STREAM, 0]))
             except Exception:
                 pass
+
+    def _restart_sensor_stream(self) -> None:
+        self._stream_restart_count += 1
+        self._last_stream_restart_monotonic = time.monotonic()
+        self._stream_buffer.clear()
+        if not self.connected:
+            self.connect()
+        try:
+            # Re-assert OI state before stream restart for better recovery.
+            self.start()
+            self.safe()
+        except Exception:
+            # Continue even if mode command is temporarily rejected.
+            pass
+        self.stop_sensor_stream()
+        self.start_sensor_stream(self._stream_packet_ids)
 
     def _start_stream_reader(self) -> None:
         if self._stream_thread and self._stream_thread.is_alive():
@@ -269,6 +300,13 @@ class RoombaOI:
         Restarts stream if reader thread is down or no packet has been received for too long.
         """
         if not self.connected:
+            try:
+                self.connect()
+                self.start()
+                self.safe()
+                self.start_sensor_stream(self._stream_packet_ids)
+            except Exception as exc:
+                self._last_stream_error = f"reconnect_failed:{exc}"
             return
         now = time.monotonic()
         thread_alive = bool(self._stream_thread and self._stream_thread.is_alive())
@@ -277,9 +315,13 @@ class RoombaOI:
         should_restart = (not thread_alive) or stale or no_data_yet
         if not should_restart:
             return
-        if self._last_stream_start_monotonic and (now - self._last_stream_start_monotonic) < restart_cooldown_sec:
+        if self._last_stream_restart_monotonic and (now - self._last_stream_restart_monotonic) < restart_cooldown_sec:
             return
-        self.start_sensor_stream(self._stream_packet_ids)
+        try:
+            self._restart_sensor_stream()
+            self._last_stream_error = ""
+        except Exception as exc:
+            self._last_stream_error = f"restart_failed:{exc}"
 
     def _apply_sensor_packet(self, packet_id: int, data: bytes) -> None:
         hard_stop = False

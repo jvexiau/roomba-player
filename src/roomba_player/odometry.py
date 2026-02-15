@@ -13,6 +13,8 @@ _MM_PER_TICK = 0.445
 _WHEEL_BASE_MM = 235.0
 _EPSILON = 1e-6
 _CLEARANCE_TOL_MM = 2.0
+_ROOM_CLEARANCE_SCALE = 0.72
+_OBSTACLE_CLEARANCE_SCALE = 0.82
 
 
 class OdometryEstimator:
@@ -432,13 +434,15 @@ class OdometryEstimator:
         if len(self._room_contour) < 3:
             return float("inf")
 
+        room_radius = max(20.0, self._robot_radius_mm * _ROOM_CLEARANCE_SCALE)
+        obstacle_radius = max(20.0, self._robot_radius_mm * _OBSTACLE_CLEARANCE_SCALE)
         room_edge_dist = self._distance_point_to_polygon_edges(x_mm, y_mm, self._room_contour)
         in_room = self._point_in_polygon(x_mm, y_mm, self._room_contour)
         if not in_room:
             # Outside room => negative clearance.
             clearance = -room_edge_dist
         else:
-            clearance = room_edge_dist - self._robot_radius_mm
+            clearance = room_edge_dist - room_radius
 
         for poly in self._obstacle_polygons:
             obs_edge_dist = self._distance_point_to_polygon_edges(x_mm, y_mm, poly)
@@ -446,7 +450,7 @@ class OdometryEstimator:
             if in_obs:
                 obs_clearance = -obs_edge_dist
             else:
-                obs_clearance = obs_edge_dist - self._robot_radius_mm
+                obs_clearance = obs_edge_dist - obstacle_radius
             clearance = min(clearance, obs_clearance)
         return clearance
 
@@ -522,18 +526,21 @@ class OdometryEstimator:
         tx = ex / norm
         ty = ey / norm
         tangent_step = step_dx * tx + step_dy * ty
-        if abs(tangent_step) <= _EPSILON:
+        step_norm = math.hypot(step_dx, step_dy)
+        base_slide_mag = max(abs(tangent_step), step_norm * 0.9)
+        if base_slide_mag <= _EPSILON:
             return None
-
-        for scale in (1.0, 0.7, 0.45, 0.25):
-            move = tangent_step * scale
-            cand_dx = tx * move
-            cand_dy = ty * move
-            cx = base_x + cand_dx
-            cy = base_y + cand_dy
-            clearance = self._pose_clearance_mm(cx, cy)
-            if self._accept_clearance(start_clearance, clearance):
-                return cand_dx, cand_dy
+        preferred_sign = 1.0 if tangent_step >= 0.0 else -1.0
+        for sign in (preferred_sign, -preferred_sign):
+            for scale in (1.25, 1.0, 0.85, 0.7, 0.55, 0.4):
+                move = base_slide_mag * scale * sign
+                cand_dx = tx * move
+                cand_dy = ty * move
+                cx = base_x + cand_dx
+                cy = base_y + cand_dy
+                clearance = self._pose_clearance_mm(cx, cy)
+                if self._accept_clearance(start_clearance, clearance):
+                    return cand_dx, cand_dy
         return None
 
     def _clamp_translation_locked(self, desired_distance_mm: float, heading_rad: float) -> tuple[float, float, float]:

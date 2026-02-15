@@ -16,9 +16,12 @@ def test_compute_aruco_target_pose_uses_marker_size_for_distance() -> None:
     }
     pose = _compute_aruco_target_pose(marker_cfg, marker_detection, frame_width=640)
     assert pose is not None
-    x_mm, y_mm, theta_deg = pose
+    x_mm, y_mm, theta_deg, pos_blend, theta_blend = pose
     assert round(x_mm, 3) == 1000.0
-    # 900 * 150 / 100 = 1350mm estimated distance from marker center on snap axis (+Y).
-    assert round(y_mm, 3) == 3350.0
+    # Vision estimate is strongly reduced and mildly anchored to base offset:
+    # 1350 * 0.18 = 243mm, target = 243*0.8 + 300*0.2 = 254.4mm.
+    assert round(y_mm, 3) == 2254.4
     # Facing marker (axis +Y => heading about -90deg).
     assert -100.0 <= theta_deg <= -80.0
+    assert 0.85 <= pos_blend <= 1.0
+    assert 0.8 <= theta_blend <= 1.0

@@ -106,28 +106,48 @@ def _aruco_axis_and_base_distance(marker_cfg: dict) -> tuple[float, float, float
     return (axis_x, axis_y, base)
 
 
-def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int) -> tuple[float, float, float] | None:
+def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int) -> tuple[float, float, float, float, float] | None:
     axis_data = _aruco_axis_and_base_distance(marker_cfg)
     if axis_data is None:
         return None
-    axis_x, axis_y, _base_dist = axis_data
+    axis_x, axis_y, base_dist = axis_data
     marker_x = float(marker_cfg.get("x_mm", 0.0) or 0.0)
     marker_y = float(marker_cfg.get("y_mm", 0.0) or 0.0)
-    size_mm = max(1.0, float(marker_cfg.get("size_mm", 150.0) or 150.0))
     marker_px = _aruco_observed_size_px(marker)
-    if marker_px is None or marker_px <= 1.0:
-        return None
-    est_dist = (float(settings.aruco_focal_px) * size_mm) / marker_px
-    est_dist = max(50.0, min(6000.0, est_dist))
-    target_x = marker_x + axis_x * est_dist
-    target_y = marker_y + axis_y * est_dist
+    if marker_px is not None and marker_px > 1.0:
+        # Keep distance estimate independent from current odometry pose.
+        # Use a strongly reduced monocular estimate to avoid overestimated ranges.
+        size_mm = max(1.0, float(marker_cfg.get("size_mm", 150.0) or 150.0))
+        est_dist = (float(settings.aruco_focal_px) * size_mm) / marker_px
+        est_dist = max(50.0, min(6000.0, est_dist))
+        reduced_dist = est_dist * 0.18
+        target_dist = max(70.0, min(1200.0, reduced_dist))
+        if base_dist > 0.0:
+            # Keep some anchoring to plan front offset but do not depend on live pose.
+            target_dist = target_dist * 0.8 + base_dist * 0.2
+    else:
+        target_dist = base_dist if base_dist > 0.0 else 250.0
+
+    target_x = marker_x + axis_x * target_dist
+    target_y = marker_y + axis_y * target_dist
     base_heading = math.degrees(math.atan2(-axis_y, -axis_x))
     center = marker.get("center") if isinstance(marker.get("center"), list) else None
     cx = float(center[0]) if center and len(center) == 2 else (frame_width * 0.5)
     fw = max(1.0, float(frame_width or 1.0))
-    heading_offset = ((cx / fw) - 0.5) * float(settings.aruco_heading_gain_deg)
+    # When marker appears close (large in image), heading should be almost exactly
+    # "face the marker", so image-based offset is reduced.
+    if marker_px is None:
+        proximity = 0.0
+    else:
+        proximity = max(0.0, min(1.0, (marker_px - 20.0) / 120.0))
+    heading_offset_gain = float(settings.aruco_heading_gain_deg) * (0.35 * (1.0 - proximity))
+    heading_offset = ((cx / fw) - 0.5) * heading_offset_gain
     target_theta = _normalize_angle_deg(base_heading + heading_offset)
-    return (target_x, target_y, target_theta)
+
+    # Drastic correction profile: always strong, and near-hard snap when close.
+    pos_blend = max(0.85, min(1.0, 0.85 + 0.25 * proximity))
+    theta_blend = max(0.8, min(1.0, 0.78 + 0.3 * proximity))
+    return (target_x, target_y, target_theta, pos_blend, theta_blend)
 
 
 def _apply_aruco_odometry_snap(result: dict) -> bool:
@@ -169,12 +189,13 @@ def _apply_aruco_odometry_snap(result: dict) -> bool:
         pose = _compute_aruco_target_pose(marker_cfg, marker, frame_width)
         if pose is None:
             continue
+        tx, ty, tt, pos_blend, theta_blend = pose
         app.state.odometry.apply_external_pose(
-            x_mm=pose[0],
-            y_mm=pose[1],
-            theta_deg=pose[2],
-            blend_pos=settings.aruco_pose_blend,
-            blend_theta=settings.aruco_theta_blend,
+            x_mm=tx,
+            y_mm=ty,
+            theta_deg=tt,
+            blend_pos=pos_blend,
+            blend_theta=theta_blend,
             source="aruco_snap",
         )
         return True
