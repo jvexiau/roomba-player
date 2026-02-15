@@ -56,15 +56,48 @@ class ArucoService:
             self._detector_error = "opencv_aruco_missing"
             return None, self._detector_error
 
-        dict_map = {
-            "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
-            "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
-            "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
-            "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
-        }
-        dict_id = dict_map.get(self.dictionary_name, cv2.aruco.DICT_4X4_50)
+        dict_names = (
+            "DICT_4X4_50",
+            "DICT_4X4_100",
+            "DICT_4X4_250",
+            "DICT_4X4_1000",
+            "DICT_5X5_50",
+            "DICT_5X5_100",
+            "DICT_5X5_250",
+            "DICT_5X5_1000",
+            "DICT_6X6_50",
+            "DICT_6X6_100",
+            "DICT_6X6_250",
+            "DICT_6X6_1000",
+            "DICT_7X7_50",
+            "DICT_7X7_100",
+            "DICT_7X7_250",
+            "DICT_7X7_1000",
+            "DICT_ARUCO_ORIGINAL",
+            "DICT_APRILTAG_16h5",
+            "DICT_APRILTAG_25h9",
+            "DICT_APRILTAG_36h10",
+            "DICT_APRILTAG_36h11",
+        )
+        dict_map = {name: getattr(cv2.aruco, name) for name in dict_names if hasattr(cv2.aruco, name)}
+        if self.dictionary_name not in dict_map:
+            self._detector_error = f"unsupported_dictionary:{self.dictionary_name}"
+            return None, self._detector_error
+
+        dict_id = dict_map[self.dictionary_name]
         dictionary = cv2.aruco.getPredefinedDictionary(dict_id)
         params = cv2.aruco.DetectorParameters()
+        # Tune defaults for small/far markers while keeping false positives reasonable.
+        params.adaptiveThreshWinSizeMin = 3
+        params.adaptiveThreshWinSizeMax = 53
+        params.adaptiveThreshWinSizeStep = 4
+        params.minMarkerPerimeterRate = 0.01
+        params.maxMarkerPerimeterRate = 4.0
+        params.minCornerDistanceRate = 0.01
+        if hasattr(cv2.aruco, "CORNER_REFINE_SUBPIX"):
+            params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+        if hasattr(params, "detectInvertedMarker"):
+            params.detectInvertedMarker = True
         self._detector = cv2.aruco.ArucoDetector(dictionary, params)
         self._detector_error = None
         return self._detector, None
@@ -192,7 +225,27 @@ class ArucoService:
                 }
             else:
                 frame_height, frame_width = frame.shape[:2]
-                corners, ids, _rej = detector.detectMarkers(frame)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                attempts: list[tuple[Any, float]] = [(gray, 1.0)]
+                if min(frame_width, frame_height) <= 1000:
+                    upscaled = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+                    # `scale_back` converts upscaled coordinates back to original frame pixels.
+                    attempts.append((upscaled, 0.5))
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                attempts.append((clahe.apply(gray), 1.0))
+
+                corners = None
+                ids = None
+                for attempt_img, scale_back in attempts:
+                    detected_corners, detected_ids, _rej = detector.detectMarkers(attempt_img)
+                    if detected_ids is None or len(detected_ids) == 0:
+                        continue
+                    corners = detected_corners
+                    ids = detected_ids
+                    if scale_back != 1.0:
+                        corners = [c.astype("float32") * scale_back for c in corners]
+                    break
+
                 markers = []
                 if ids is not None and len(ids) > 0:
                     for i, marker_id in enumerate(ids.flatten().tolist()):

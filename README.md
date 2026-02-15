@@ -1,4 +1,4 @@
-# roomba-player v0.3.1
+# roomba-player v0.5.0
 
 > **FR**: Plateforme Python pour piloter et monitorer un Roomba via Raspberry Pi, avec interface web temps réel, caméra optionnelle, plan du salon et odométrie persistée.
 >
@@ -170,6 +170,19 @@ make restart-rpi
 - `GET /api/odometry`
 - `POST /api/odometry/reset`
 - `POST /api/odometry/reset-history`
+
+## ArUco notes / Notes ArUco
+
+- The ArUco detector is fed from `/camera/stream` frames. If no active stream client exists (for example `/player` closed), detections will stop.
+- `ARUCO_DICTIONARY` must match your printed markers exactly. Invalid values now return an explicit `unsupported_dictionary:<name>` reason in `/aruco/debug`.
+- Supported dictionaries include:
+  - `DICT_4X4_50`, `DICT_4X4_100`, `DICT_4X4_250`, `DICT_4X4_1000`
+  - `DICT_5X5_50`, `DICT_5X5_100`, `DICT_5X5_250`, `DICT_5X5_1000`
+  - `DICT_6X6_50`, `DICT_6X6_100`, `DICT_6X6_250`, `DICT_6X6_1000`
+  - `DICT_7X7_50`, `DICT_7X7_100`, `DICT_7X7_250`, `DICT_7X7_1000`
+  - `DICT_ARUCO_ORIGINAL`
+  - `DICT_APRILTAG_16h5`, `DICT_APRILTAG_25h9`, `DICT_APRILTAG_36h10`, `DICT_APRILTAG_36h11`
+- If you need longer-range detection, prefer higher camera resolution (`1280x720`) and enough light before increasing framerate.
 
 ## Notes
 
