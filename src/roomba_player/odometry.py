@@ -12,6 +12,7 @@ _ENCODER_MAX = 65536
 _MM_PER_TICK = 0.445
 _WHEEL_BASE_MM = 235.0
 _EPSILON = 1e-6
+_CLEARANCE_TOL_MM = 2.0
 
 
 class OdometryEstimator:
@@ -56,6 +57,7 @@ class OdometryEstimator:
             self._x_mm = float(x_mm)
             self._y_mm = float(y_mm)
             self._theta_rad = math.radians(float(theta_deg))
+            self._snap_pose_to_valid_locked()
             self._last_total_distance_mm = (
                 None if base_total_distance_mm is None else float(base_total_distance_mm)
             )
@@ -261,6 +263,38 @@ class OdometryEstimator:
             # History persistence must never break live control.
             return
 
+    def _snap_pose_to_valid_locked(self) -> None:
+        if len(self._room_contour) < 3:
+            return
+        if self._is_pose_valid(self._x_mm, self._y_mm):
+            return
+        base_x = self._x_mm
+        base_y = self._y_mm
+        best: tuple[float, float, float] | None = None
+        max_radius = max(300.0, self._robot_radius_mm * 3.0)
+        ring_step = 20.0
+        angle_step_deg = 12.0
+        rings = int(max_radius / ring_step)
+        for r_i in range(1, rings + 1):
+            r = r_i * ring_step
+            angle = 0.0
+            while angle < 360.0:
+                ar = math.radians(angle)
+                cx = base_x + r * math.cos(ar)
+                cy = base_y + r * math.sin(ar)
+                if self._is_pose_valid(cx, cy):
+                    dist = math.hypot(cx - base_x, cy - base_y)
+                    if best is None or dist < best[2]:
+                        best = (cx, cy, dist)
+                        # First valid point in current ring is good enough.
+                        break
+                angle += angle_step_deg
+            if best is not None:
+                break
+        if best is not None:
+            self._x_mm = best[0]
+            self._y_mm = best[1]
+
     @staticmethod
     def _normalize_polygon(raw_points) -> list[tuple[float, float]]:
         if not isinstance(raw_points, list):
@@ -421,7 +455,9 @@ class OdometryEstimator:
     def _accept_clearance(start_clearance: float, candidate_clearance: float) -> bool:
         if start_clearance >= 0.0:
             return candidate_clearance >= 0.0
-        return candidate_clearance > (start_clearance + _EPSILON)
+        # If already in invalid/near-collision zone, allow non-degrading moves
+        # (tangential sliding) and improving moves to avoid deadlocks.
+        return candidate_clearance >= (start_clearance - _CLEARANCE_TOL_MM)
 
     def _try_slide_step_locked(
         self,

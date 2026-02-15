@@ -21,6 +21,7 @@ class ArucoService:
         self._thread: threading.Thread | None = None
         self._detector = None
         self._detector_error = None
+        self._last_result_monotonic = 0.0
         self._stats = {
             "frames_enqueued": 0,
             "frames_dropped": 0,
@@ -151,7 +152,25 @@ class ArucoService:
 
     def get_last_result(self) -> dict[str, Any]:
         with self._lock:
-            return dict(self._last_result)
+            result = dict(self._last_result)
+            age_sec = time.monotonic() - self._last_result_monotonic if self._last_result_monotonic > 0 else None
+            stale_after_sec = max(1.5, self.interval_sec * 2.5)
+            if (
+                self.enabled
+                and age_sec is not None
+                and age_sec > stale_after_sec
+            ):
+                return {
+                    "ok": False,
+                    "enabled": True,
+                    "reason": "stale",
+                    "markers": [],
+                    "count": 0,
+                    "timestamp": result.get("timestamp"),
+                    "frame_width": int(result.get("frame_width", 0) or 0),
+                    "frame_height": int(result.get("frame_height", 0) or 0),
+                }
+            return result
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -286,5 +305,6 @@ class ArucoService:
 
         with self._lock:
             self._last_result = result
+            self._last_result_monotonic = time.monotonic()
             self._stats["last_detect_duration_ms"] = round((time.monotonic() - started) * 1000.0, 2)
             self._stats["last_detect_finished_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

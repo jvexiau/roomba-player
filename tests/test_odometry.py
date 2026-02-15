@@ -214,3 +214,33 @@ def test_collision_guard_slides_along_wall() -> None:
     pose = odom.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
     assert pose["x_mm"] > 230.0
     assert pose["y_mm"] <= 951.0
+
+
+def test_collision_guard_allows_tangential_motion_when_already_too_close() -> None:
+    odom = OdometryEstimator(source="encoders")
+    odom.set_collision_plan(
+        {
+            "contour": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]],
+            "objects": [],
+        },
+        robot_radius_mm=100,
+    )
+    # Inside room but already too close to top wall (negative clearance).
+    odom.reset(200, 940, 0, base_left_encoder_counts=1000, base_right_encoder_counts=1000)
+    pose = odom.update_from_telemetry({"left_encoder_counts": 1200, "right_encoder_counts": 1200, "timestamp": "t1"})
+    assert pose["x_mm"] > 200.0
+
+
+def test_reset_snaps_to_nearest_valid_pose_when_start_invalid() -> None:
+    odom = OdometryEstimator(source="encoders")
+    odom.set_collision_plan(
+        {
+            "contour": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]],
+            "objects": [],
+        },
+        robot_radius_mm=100,
+    )
+    odom.reset(980, 980, 0)
+    pose = odom.get_pose()
+    assert pose["x_mm"] < 901.0
+    assert pose["y_mm"] < 901.0

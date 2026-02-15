@@ -65,7 +65,7 @@
     }
     if (!aruco.ok) {
       RP.refs.arucoStatusNode.textContent = `off (${aruco.reason || "idle"})`;
-      if (aruco.reason === "disabled") clearOverlay();
+      clearOverlay();
       return;
     }
     RP.refs.arucoStatusNode.textContent = `${Number(aruco.count || 0)} marker(s)`;

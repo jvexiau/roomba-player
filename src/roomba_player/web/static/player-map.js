@@ -5,6 +5,7 @@
   let renderPose = { ...defaultPose };
   let animLoopStarted = false;
   let lastAnimTs = 0;
+  let resizeBound = false;
 
   function computePlanBounds(plan) {
     const pts = [].concat(plan.contour || []);
@@ -23,16 +24,45 @@
     return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function applyCanvasSize(bounds) {
+    const staticCanvas = RP.refs.planStaticCanvas;
+    const robotCanvas = RP.refs.planRobotCanvas;
+    const host = staticCanvas.parentElement;
+    const hostWidth = Math.max(320, Math.floor((host && host.clientWidth) || staticCanvas.clientWidth || 900));
+    const defaultAspect = 0.58;
+    let aspect = defaultAspect;
+    if (bounds) {
+      const w = Math.max(1, bounds.maxX - bounds.minX);
+      const h = Math.max(1, bounds.maxY - bounds.minY);
+      aspect = h / w;
+    }
+    const maxH = clamp(Math.floor(window.innerHeight * 0.82), 420, 1200);
+    const minH = 340;
+    const targetH = clamp(Math.round(hostWidth * aspect), minH, maxH);
+    if (staticCanvas.width !== hostWidth || staticCanvas.height !== targetH) {
+      staticCanvas.width = hostWidth;
+      staticCanvas.height = targetH;
+      robotCanvas.width = hostWidth;
+      robotCanvas.height = targetH;
+    }
+  }
+
   function renderStaticPlan() {
     const c = RP.refs.planStaticCanvas;
+    const plan = RP.state.currentPlan;
+    const b = plan ? computePlanBounds(plan) : null;
+    applyCanvasSize(b);
     const ctx = c.getContext("2d");
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, c.width, c.height);
     RP.state.planProjection = null;
-    if (!RP.state.currentPlan) return;
+    if (!plan) return;
 
-    const b = computePlanBounds(RP.state.currentPlan);
     const pad = 20;
     const sx = (c.width - pad * 2) / Math.max(1, b.maxX - b.minX);
     const sy = (c.height - pad * 2) / Math.max(1, b.maxY - b.minY);
@@ -43,9 +73,9 @@
     RP.state.planProjection = { minX: b.minX, minY: b.minY, pad, scale, height: h };
 
     ctx.lineWidth = 2;
-    RP.utils.drawPolygon(ctx, RP.state.currentPlan.contour, tx, ty, scale, "#334155", "#f8fafc");
-    const shapes = RP.state.currentPlan.object_shapes || {};
-    for (const obj of RP.state.currentPlan.objects || []) {
+    RP.utils.drawPolygon(ctx, plan.contour, tx, ty, scale, "#334155", "#f8fafc");
+    const shapes = plan.object_shapes || {};
+    for (const obj of plan.objects || []) {
       const shape = shapes[obj.shape_ref];
       if (!shape) continue;
       const theta = ((obj.theta_deg || 0) * Math.PI) / 180;
@@ -104,6 +134,13 @@
     if (animLoopStarted) return;
     animLoopStarted = true;
     window.requestAnimationFrame(animationTick);
+    if (!resizeBound) {
+      resizeBound = true;
+      window.addEventListener("resize", () => {
+        renderStaticPlan();
+        drawRobotPoseFrom(renderPose);
+      });
+    }
   }
 
   function setTargetPose(odom) {
