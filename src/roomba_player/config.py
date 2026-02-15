@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     odometry_linear_scale: float = 1.0
     odometry_angular_scale: float = 1.0
     odometry_robot_radius_mm: float = 180.0
+    odometry_collision_margin_scale: float = 0.55
 
 
 settings = Settings()

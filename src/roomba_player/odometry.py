@@ -13,8 +13,6 @@ _MM_PER_TICK = 0.445
 _WHEEL_BASE_MM = 235.0
 _EPSILON = 1e-6
 _CLEARANCE_TOL_MM = 2.0
-_ROOM_CLEARANCE_SCALE = 0.72
-_OBSTACLE_CLEARANCE_SCALE = 0.82
 
 
 class OdometryEstimator:
@@ -25,6 +23,7 @@ class OdometryEstimator:
         mm_per_tick: float = _MM_PER_TICK,
         linear_scale: float = 1.0,
         angular_scale: float = 1.0,
+        collision_margin_scale: float = 0.55,
     ) -> None:
         self._lock = Lock()
         self._x_mm = 0.0
@@ -41,6 +40,7 @@ class OdometryEstimator:
         self._mm_per_tick = float(mm_per_tick)
         self._linear_scale = float(linear_scale)
         self._angular_scale = float(angular_scale)
+        self._collision_margin_scale = max(0.3, min(1.0, float(collision_margin_scale)))
         self._room_contour: list[tuple[float, float]] = []
         self._obstacle_polygons: list[list[tuple[float, float]]] = []
         self._robot_radius_mm = 0.0
@@ -434,8 +434,8 @@ class OdometryEstimator:
         if len(self._room_contour) < 3:
             return float("inf")
 
-        room_radius = max(20.0, self._robot_radius_mm * _ROOM_CLEARANCE_SCALE)
-        obstacle_radius = max(20.0, self._robot_radius_mm * _OBSTACLE_CLEARANCE_SCALE)
+        room_radius = max(20.0, self._robot_radius_mm * self._collision_margin_scale)
+        obstacle_radius = max(20.0, self._robot_radius_mm * min(1.0, self._collision_margin_scale + 0.08))
         room_edge_dist = self._distance_point_to_polygon_edges(x_mm, y_mm, self._room_contour)
         in_room = self._point_in_polygon(x_mm, y_mm, self._room_contour)
         if not in_room:
