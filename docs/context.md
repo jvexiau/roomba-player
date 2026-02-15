@@ -171,6 +171,7 @@ Scripts:
   - robot radius
   - collision margin scale
   - tangent/sliding clamp logic
+  - design rule: no lateral slide on near-frontal collision (slide only with tangential intent)
 - ArUco snap behavior is sensitive to:
   - marker area-to-distance mapping
   - inferred shape/yaw from corners

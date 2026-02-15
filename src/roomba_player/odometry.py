@@ -527,7 +527,10 @@ class OdometryEstimator:
         ty = ey / norm
         tangent_step = step_dx * tx + step_dy * ty
         step_norm = math.hypot(step_dx, step_dy)
-        base_slide_mag = max(abs(tangent_step), step_norm * 0.9)
+        # Only slide when requested motion has meaningful tangential intent.
+        if abs(tangent_step) < (step_norm * 0.15):
+            return None
+        base_slide_mag = abs(tangent_step)
         if base_slide_mag <= _EPSILON:
             return None
         preferred_sign = 1.0 if tangent_step >= 0.0 else -1.0
