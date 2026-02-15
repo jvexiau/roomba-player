@@ -1,8 +1,13 @@
-# roomba-player v1.0.0
+# roomba-player v1.0.1
 
 [Go directly to French version (FR)](#version-francaise)
+[Session context / handover (no secrets)](docs/context.md)
 
 ## English
+
+### Session Context
+
+- Handover file (safe to share, no secrets): `docs/context.md`
 
 ### Overview
 
@@ -171,7 +176,7 @@ HTTP:
 - `GET /player`
 - `GET /health`
 - `GET /telemetry`
-- `POST /camera/start`
+- `POST /camera/start` (compat endpoint; camera is already auto-started when enabled)
 - `GET /camera/stream`
 - `GET /aruco/status`
 - `GET /aruco/debug`
@@ -216,6 +221,12 @@ Collision too early/late:
 ---
 
 ## Version Francaise
+
+[Contexte de reprise de session (sans secrets)](docs/context.md)
+
+### Contexte de session
+
+- Fichier de reprise (partageable, sans secrets): `docs/context.md`
 
 ### Vue d'ensemble
 
@@ -384,7 +395,7 @@ HTTP:
 - `GET /player`
 - `GET /health`
 - `GET /telemetry`
-- `POST /camera/start`
+- `POST /camera/start` (endpoint de compatibilite; la camera est deja auto-demarree si activee)
 - `GET /camera/stream`
 - `GET /aruco/status`
 - `GET /aruco/debug`
