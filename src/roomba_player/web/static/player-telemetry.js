@@ -101,105 +101,6 @@
     };
   }
 
-  function computeArucoPairEstimate(aruco) {
-    if (!aruco || !aruco.ok) return null;
-    const plan = RP.state.currentPlan;
-    if (!plan || !Array.isArray(plan.aruco_markers)) return null;
-    const detections = Array.isArray(aruco.markers) ? aruco.markers.filter((m) => m && Number.isFinite(Number(m.id))) : [];
-    if (detections.length < 2) return null;
-
-    const cfgById = new Map();
-    for (const cfg of plan.aruco_markers) {
-      const id = Number(cfg && cfg.id);
-      if (Number.isFinite(id)) cfgById.set(id, cfg);
-    }
-
-    let best = null;
-    for (let i = 0; i < detections.length; i += 1) {
-      const da = detections[i];
-      const cfgA = cfgById.get(Number(da.id));
-      if (!cfgA) continue;
-      for (let j = i + 1; j < detections.length; j += 1) {
-        const db = detections[j];
-        const cfgB = cfgById.get(Number(db.id));
-        if (!cfgB) continue;
-        const ax = Number(cfgA.x_mm || 0);
-        const ay = Number(cfgA.y_mm || 0);
-        const bx = Number(cfgB.x_mm || 0);
-        const by = Number(cfgB.y_mm || 0);
-        const worldDist = Math.hypot(bx - ax, by - ay);
-        if (worldDist < 80) continue;
-        const ac = Array.isArray(da.center) ? da.center : [0, 0];
-        const bc = Array.isArray(db.center) ? db.center : [0, 0];
-        const pixelDist = Math.hypot(Number(bc[0] || 0) - Number(ac[0] || 0), Number(bc[1] || 0) - Number(ac[1] || 0));
-        if (pixelDist < 2) continue;
-        const areaSum = Number(da.area_px || 0) + Number(db.area_px || 0);
-        const score = areaSum + (120 * pixelDist);
-        if (!best || score > best.score) {
-          best = { score, da, db, cfgA, cfgB, worldDist, pixelDist };
-        }
-      }
-    }
-    if (!best) return null;
-
-    const ax = Number(best.cfgA.x_mm || 0);
-    const ay = Number(best.cfgA.y_mm || 0);
-    const bx = Number(best.cfgB.x_mm || 0);
-    const by = Number(best.cfgB.y_mm || 0);
-    const tx = (bx - ax) / best.worldDist;
-    const ty = (by - ay) / best.worldDist;
-    const axisA = markerAxis(best.cfgA) || { x: 0, y: 1 };
-    const axisB = markerAxis(best.cfgB) || axisA;
-    let avgAx = axisA.x + axisB.x;
-    let avgAy = axisA.y + axisB.y;
-    const avgN = Math.hypot(avgAx, avgAy);
-    if (avgN > 1e-6) {
-      avgAx /= avgN;
-      avgAy /= avgN;
-    } else {
-      avgAx = axisA.x;
-      avgAy = axisA.y;
-    }
-
-    const n1x = -ty;
-    const n1y = tx;
-    const n2x = ty;
-    const n2y = -tx;
-    const useN2 = (n2x * avgAx + n2y * avgAy) > (n1x * avgAx + n1y * avgAy);
-    const axisX = useN2 ? n2x : n1x;
-    const axisY = useN2 ? n2y : n1y;
-
-    const focalPx = Math.max(1, Number(RP.config.arucoFocalPx || 900));
-    const defaultSizeMm = Math.max(10, Number(RP.config.arucoMarkerSizeCm || 15) * 10);
-    const sizeA = Math.max(10, Number(best.cfgA.size_mm || defaultSizeMm));
-    const sizeB = Math.max(10, Number(best.cfgB.size_mm || defaultSizeMm));
-    const markerSizeMm = 0.5 * (sizeA + sizeB);
-    const dPair = (focalPx * best.worldDist) / best.pixelDist;
-    const areaA = Math.max(0, Number(best.da.area_px || 0));
-    const areaB = Math.max(0, Number(best.db.area_px || 0));
-    const avgArea = 0.5 * (areaA + areaB);
-    let dArea = null;
-    if (avgArea > 1) {
-      dArea = (focalPx * markerSizeMm) / Math.sqrt(avgArea);
-    }
-    const estDist = Number.isFinite(dArea) ? ((0.85 * dPair) + (0.15 * dArea)) : dPair;
-    const midX = 0.5 * (ax + bx);
-    const midY = 0.5 * (ay + by);
-    const poseX = midX + axisX * estDist;
-    const poseY = midY + axisY * estDist;
-    const thetaDeg = normalizeAngleDeg((Math.atan2(-axisY, -axisX) * 180) / Math.PI);
-    return {
-      idA: Number(best.da.id),
-      idB: Number(best.db.id),
-      pixelDist: best.pixelDist,
-      worldDist: best.worldDist,
-      estDist,
-      poseX,
-      poseY,
-      thetaDeg,
-    };
-  }
-
   function logArucoRealtime(aruco) {
     if (!RP.config.arucoEnabled) return;
     if (!aruco || aruco.enabled === false) {
@@ -208,7 +109,6 @@
       }
       RP.state.arucoHadDetection = false;
       RP.state.arucoLogSignature = "inactive";
-      RP.state.arucoPairLogSignature = "";
       RP.state.arucoFrameLogKey = "";
       return;
     }
@@ -220,7 +120,6 @@
       }
       RP.state.arucoHadDetection = false;
       RP.state.arucoLogSignature = sig;
-      RP.state.arucoPairLogSignature = "";
       RP.state.arucoFrameLogKey = "";
       return;
     }
@@ -233,7 +132,8 @@
     if (frameKey !== RP.state.arucoFrameLogKey) {
       const frameW = Number(aruco.frame_width || 0);
       const frameH = Number(aruco.frame_height || 0);
-      RP.utils.addLog(`aruco frame ts=${String(aruco.timestamp || "-")} size=${frameW}x${frameH} markers=${markers.length}`);
+      const status = markers.length > 0 ? "FOUND" : "NOT_FOUND";
+      RP.utils.addLog(`aruco frame ts=${String(aruco.timestamp || "-")} size=${frameW}x${frameH} status=${status} markers=${markers.length}`);
       const plan = RP.state.currentPlan;
       const cfgById = new Map();
       if (plan && Array.isArray(plan.aruco_markers)) {
@@ -242,26 +142,30 @@
           if (Number.isFinite(id)) cfgById.set(id, cfg);
         }
       }
-      for (const marker of markers) {
-        const id = Number(marker && marker.id);
-        if (!Number.isFinite(id)) continue;
-        const center = Array.isArray(marker.center) ? marker.center : [0, 0];
-        const areaPx = Number(marker.area_px || 0);
-        const cfg = cfgById.get(id);
-        const est = markerEstimate(cfg, marker, frameW);
-        if (!cfg || !est) {
+      if (markers.length === 0) {
+        RP.utils.addLog("  - no marker detected on this analysis");
+      } else {
+        for (const marker of markers) {
+          const id = Number(marker && marker.id);
+          if (!Number.isFinite(id)) continue;
+          const center = Array.isArray(marker.center) ? marker.center : [0, 0];
+          const areaPx = Number(marker.area_px || 0);
+          const cfg = cfgById.get(id);
+          const est = markerEstimate(cfg, marker, frameW);
+          if (!cfg || !est) {
+            RP.utils.addLog(
+              `  - id=${id} center=(${Number(center[0] || 0).toFixed(1)},${Number(center[1] || 0).toFixed(1)}) area=${Math.round(areaPx)} (no plan marker cfg)`
+            );
+            continue;
+          }
+          const odom = RP.state.currentOdom || { x_mm: 0, y_mm: 0 };
+          const dx = est.targetX - Number(odom.x_mm || 0);
+          const dy = est.targetY - Number(odom.y_mm || 0);
+          const dd = Math.hypot(dx, dy);
           RP.utils.addLog(
-            `  - id=${id} center=(${Number(center[0] || 0).toFixed(1)},${Number(center[1] || 0).toFixed(1)}) area=${Math.round(areaPx)} (no plan marker cfg)`
+            `  - id=${id} center=(${Number(center[0] || 0).toFixed(1)},${Number(center[1] || 0).toFixed(1)}) area=${Math.round(areaPx)} pxSize=${(est.markerPx || 0).toFixed(1)} shapeCos=${est.shapeCos.toFixed(3)} shapeYaw=${est.shapeYawDeg.toFixed(1)}deg estDist=${Math.round(est.estDist)}mm estPose=(${Math.round(est.targetX)},${Math.round(est.targetY)},${Math.round(est.targetTheta)}deg) relToOdom=(${Math.round(dx)},${Math.round(dy)} d=${Math.round(dd)}mm)`
           );
-          continue;
         }
-        const odom = RP.state.currentOdom || { x_mm: 0, y_mm: 0 };
-        const dx = est.targetX - Number(odom.x_mm || 0);
-        const dy = est.targetY - Number(odom.y_mm || 0);
-        const dd = Math.hypot(dx, dy);
-        RP.utils.addLog(
-          `  - id=${id} center=(${Number(center[0] || 0).toFixed(1)},${Number(center[1] || 0).toFixed(1)}) area=${Math.round(areaPx)} pxSize=${(est.markerPx || 0).toFixed(1)} shapeCos=${est.shapeCos.toFixed(3)} shapeYaw=${est.shapeYawDeg.toFixed(1)}deg estDist=${Math.round(est.estDist)}mm estPose=(${Math.round(est.targetX)},${Math.round(est.targetY)},${Math.round(est.targetTheta)}deg) relToOdom=(${Math.round(dx)},${Math.round(dy)} d=${Math.round(dd)}mm)`
-        );
       }
       RP.state.arucoFrameLogKey = frameKey;
     }
@@ -276,16 +180,6 @@
     } else if (ids.length === 0 && RP.state.arucoHadDetection) {
       RP.utils.addLog("aruco: no marker");
       RP.state.arucoHadDetection = false;
-    }
-    const pair = computeArucoPairEstimate(aruco);
-    if (pair) {
-      const pairSig = `pair:${pair.idA}-${pair.idB}:${Math.round(pair.pixelDist)}:${Math.round(pair.estDist)}:${Math.round(pair.thetaDeg)}`;
-      if (pairSig !== RP.state.arucoPairLogSignature) {
-        RP.utils.addLog(
-          `aruco pair ${pair.idA}-${pair.idB}: px=${pair.pixelDist.toFixed(1)} world=${Math.round(pair.worldDist)}mm estDist=${Math.round(pair.estDist)}mm estPose x=${Math.round(pair.poseX)} y=${Math.round(pair.poseY)} th=${Math.round(pair.thetaDeg)}deg`
-        );
-      }
-      RP.state.arucoPairLogSignature = pairSig;
     }
     RP.state.arucoLogSignature = sig;
   }

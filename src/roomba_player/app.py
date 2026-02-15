@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import threading
 import time
 from pathlib import Path
 
@@ -27,6 +28,71 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 STATIC_DIR = WEB_DIR / "static"
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def _set_camera_latest_jpeg(jpeg: bytes) -> None:
+    if not jpeg:
+        return
+    with app.state.camera_frame_lock:
+        app.state.camera_latest_jpeg = jpeg
+        app.state.camera_latest_ts = time.monotonic()
+
+
+def _camera_reader_loop() -> None:
+    buf = bytearray()
+    next_aruco_at = 0.0
+    while not app.state.camera_reader_stop.is_set():
+        ffmpeg_proc = app.state.camera_ffmpeg_proc
+        camera_proc = app.state.camera_proc
+        if ffmpeg_proc is None or camera_proc is None:
+            try:
+                start = app.state.camera.start_if_enabled()
+                if not start.get("enabled") or not start.get("started"):
+                    time.sleep(1.0)
+                    continue
+                camera_proc, ffmpeg_proc = app.state.camera.open_stream_processes()
+                app.state.camera_proc = camera_proc
+                app.state.camera_ffmpeg_proc = ffmpeg_proc
+            except Exception:
+                app.state.camera_proc = None
+                app.state.camera_ffmpeg_proc = None
+                time.sleep(1.0)
+                continue
+
+        try:
+            chunk = ffmpeg_proc.stdout.read(8192)
+        except Exception:
+            chunk = b""
+        if not chunk:
+            app.state.camera.stop()
+            app.state.camera_proc = None
+            app.state.camera_ffmpeg_proc = None
+            time.sleep(0.4)
+            continue
+
+        buf.extend(chunk)
+        # Extract complete JPEG frames from ffmpeg mpjpeg stream.
+        while True:
+            soi = buf.find(b"\xff\xd8")
+            if soi < 0:
+                if len(buf) > 2_000_000:
+                    del buf[:-64_000]
+                break
+            eoi = buf.find(b"\xff\xd9", soi + 2)
+            if eoi < 0:
+                if soi > 0:
+                    del buf[:soi]
+                if len(buf) > 2_000_000:
+                    del buf[:-64_000]
+                break
+            jpeg = bytes(buf[soi : eoi + 2])
+            del buf[: eoi + 2]
+            _set_camera_latest_jpeg(jpeg)
+            if app.state.aruco.enabled:
+                now = time.monotonic()
+                if now >= next_aruco_at:
+                    app.state.aruco.enqueue_jpeg_frame(jpeg)
+                    next_aruco_at = now + app.state.aruco.interval_sec
 
 
 def _asset_version() -> str:
@@ -150,123 +216,6 @@ def _aruco_axis_and_base_distance(marker_cfg: dict) -> tuple[float, float, float
     return (axis_x, axis_y, base)
 
 
-def _aruco_center_xy(marker: dict, frame_width: int) -> tuple[float, float]:
-    center = marker.get("center") if isinstance(marker.get("center"), list) else None
-    if center and len(center) == 2:
-        try:
-            return (float(center[0]), float(center[1]))
-        except Exception:
-            pass
-    return (float(frame_width) * 0.5, 0.0)
-
-
-def _compute_aruco_pair_target_pose(
-    marker_a_cfg: dict,
-    marker_a: dict,
-    marker_b_cfg: dict,
-    marker_b: dict,
-    frame_width: int,
-) -> tuple[float, float, float, float, float] | None:
-    try:
-        ax = float(marker_a_cfg.get("x_mm", 0.0) or 0.0)
-        ay = float(marker_a_cfg.get("y_mm", 0.0) or 0.0)
-        bx = float(marker_b_cfg.get("x_mm", 0.0) or 0.0)
-        by = float(marker_b_cfg.get("y_mm", 0.0) or 0.0)
-    except Exception:
-        return None
-    world_dx = bx - ax
-    world_dy = by - ay
-    world_norm = math.hypot(world_dx, world_dy)
-    if world_norm < 1e-6:
-        return None
-    tan_x = world_dx / world_norm
-    tan_y = world_dy / world_norm
-
-    axis_a = _aruco_axis_and_base_distance(marker_a_cfg)
-    axis_b = _aruco_axis_and_base_distance(marker_b_cfg)
-    if axis_a is None or axis_b is None:
-        return None
-    avg_axis_x = axis_a[0] + axis_b[0]
-    avg_axis_y = axis_a[1] + axis_b[1]
-    avg_norm = math.hypot(avg_axis_x, avg_axis_y)
-    if avg_norm > 1e-6:
-        avg_axis_x /= avg_norm
-        avg_axis_y /= avg_norm
-    else:
-        avg_axis_x, avg_axis_y = axis_a[0], axis_a[1]
-
-    n1x, n1y = -tan_y, tan_x
-    n2x, n2y = tan_y, -tan_x
-    if (n2x * avg_axis_x + n2y * avg_axis_y) > (n1x * avg_axis_x + n1y * avg_axis_y):
-        axis_x, axis_y = n2x, n2y
-    else:
-        axis_x, axis_y = n1x, n1y
-
-    a_cx, a_cy = _aruco_center_xy(marker_a, frame_width)
-    b_cx, b_cy = _aruco_center_xy(marker_b, frame_width)
-    pair_px = math.hypot(b_cx - a_cx, b_cy - a_cy)
-    if pair_px < 1.0:
-        return None
-
-    focal_px = max(1.0, float(settings.aruco_focal_px))
-    pair_spacing_mm = world_norm
-    marker_size_mm = 0.5 * (_aruco_marker_size_mm(marker_a_cfg) + _aruco_marker_size_mm(marker_b_cfg))
-    marker_a_px = _aruco_observed_size_px(marker_a)
-    marker_b_px = _aruco_observed_size_px(marker_b)
-    shape_cos_a, shape_yaw_a = _aruco_shape_metrics(marker_a)
-    shape_cos_b, shape_yaw_b = _aruco_shape_metrics(marker_b)
-    avg_shape_cos = max(0.08, min(1.0, 0.5 * (shape_cos_a + shape_cos_b)))
-    avg_shape_yaw = 0.5 * (shape_yaw_a + shape_yaw_b)
-    side_px_values = [v for v in (marker_a_px, marker_b_px) if isinstance(v, float) and v > 1.0]
-    area_a = float(marker_a.get("area_px", 0.0) or 0.0)
-    area_b = float(marker_b.get("area_px", 0.0) or 0.0)
-    avg_area = 0.5 * (max(0.0, area_a) + max(0.0, area_b))
-
-    d_pair = (focal_px * pair_spacing_mm) / pair_px
-    d_size = None
-    if side_px_values:
-        d_size = (focal_px * marker_size_mm) / (sum(side_px_values) / len(side_px_values))
-    d_area = None
-    if avg_area > 1.0:
-        d_area = (focal_px * marker_size_mm) / max(1.0, math.sqrt(avg_area))
-        # Area shrinks with oblique views; compensate using shape-derived obliquity.
-        d_area *= math.sqrt(avg_shape_cos)
-
-    target_dist = d_pair
-    if d_size is not None:
-        target_dist = (0.75 * target_dist) + (0.25 * d_size)
-    if d_area is not None:
-        target_dist = (0.85 * target_dist) + (0.15 * d_area)
-    target_dist = max(70.0, min(2500.0, float(target_dist)))
-
-    mid_x = 0.5 * (ax + bx)
-    mid_y = 0.5 * (ay + by)
-    target_x = mid_x + axis_x * target_dist
-    target_y = mid_y + axis_y * target_dist
-
-    base_heading = math.degrees(math.atan2(-axis_y, -axis_x))
-    pair_cx = 0.5 * (a_cx + b_cx)
-    fw = max(1.0, float(frame_width or 1.0))
-    # Bigger observed tags => stronger hard snap to "face markers" heading.
-    area_anchor = 3253.0 * ((marker_size_mm / 150.0) ** 2)
-    proximity = max(0.0, min(1.0, avg_area / max(1.0, area_anchor)))
-    heading_offset_gain = float(settings.aruco_heading_gain_deg) * (0.25 * (1.0 - proximity))
-    heading_offset = ((pair_cx / fw) - 0.5) * heading_offset_gain
-    shape_heading_correction = avg_shape_yaw * (0.22 * (1.0 - 0.5 * proximity))
-    target_theta = _normalize_angle_deg(base_heading + heading_offset + shape_heading_correction)
-
-    frontal_snap = avg_shape_cos >= (0.96 - 0.08 * proximity)
-    if frontal_snap:
-        # If the pair looks frontal (near-square projection), force a hard "in-front" snap.
-        target_theta = _normalize_angle_deg(base_heading)
-        pos_blend = 1.0
-        theta_blend = 1.0
-    else:
-        pos_blend = max(0.92, min(1.0, 0.9 + 0.14 * proximity))
-        theta_blend = max(0.94, min(1.0, 0.9 + 0.2 * proximity))
-    return (target_x, target_y, target_theta, pos_blend, theta_blend)
-
-
 def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int) -> tuple[float, float, float, float, float] | None:
     axis_data = _aruco_axis_and_base_distance(marker_cfg)
     if axis_data is None:
@@ -350,56 +299,6 @@ def _apply_aruco_odometry_snap(result: dict) -> bool:
         key=lambda m: float(m.get("area_px", 0.0) or 0.0),
         reverse=True,
     )
-    pair_candidates: list[tuple[float, dict, dict, dict, dict]] = []
-    for i, marker_a in enumerate(ranked):
-        try:
-            marker_a_id = int(marker_a.get("id"))
-        except Exception:
-            continue
-        marker_a_cfg = marker_index.get(marker_a_id)
-        if marker_a_cfg is None:
-            continue
-        for marker_b in ranked[i + 1 :]:
-            try:
-                marker_b_id = int(marker_b.get("id"))
-            except Exception:
-                continue
-            marker_b_cfg = marker_index.get(marker_b_id)
-            if marker_b_cfg is None:
-                continue
-            try:
-                wx = float(marker_b_cfg.get("x_mm", 0.0) or 0.0) - float(marker_a_cfg.get("x_mm", 0.0) or 0.0)
-                wy = float(marker_b_cfg.get("y_mm", 0.0) or 0.0) - float(marker_a_cfg.get("y_mm", 0.0) or 0.0)
-            except Exception:
-                continue
-            world_dist = math.hypot(wx, wy)
-            if world_dist < 80.0:
-                continue
-            a_cx, a_cy = _aruco_center_xy(marker_a, frame_width)
-            b_cx, b_cy = _aruco_center_xy(marker_b, frame_width)
-            pixel_dist = math.hypot(b_cx - a_cx, b_cy - a_cy)
-            if pixel_dist < 2.0:
-                continue
-            area_sum = float(marker_a.get("area_px", 0.0) or 0.0) + float(marker_b.get("area_px", 0.0) or 0.0)
-            score = area_sum + (120.0 * pixel_dist)
-            pair_candidates.append((score, marker_a_cfg, marker_a, marker_b_cfg, marker_b))
-
-    if pair_candidates:
-        pair_candidates.sort(key=lambda x: x[0], reverse=True)
-        _score, cfg_a, det_a, cfg_b, det_b = pair_candidates[0]
-        pair_pose = _compute_aruco_pair_target_pose(cfg_a, det_a, cfg_b, det_b, frame_width)
-        if pair_pose is not None:
-            tx, ty, tt, pos_blend, theta_blend = pair_pose
-            app.state.odometry.apply_external_pose(
-                x_mm=tx,
-                y_mm=ty,
-                theta_deg=tt,
-                blend_pos=pos_blend,
-                blend_theta=theta_blend,
-                source="aruco_pair_snap",
-            )
-            return True
-
     for marker in ranked:
         try:
             marker_id = int(marker.get("id"))
@@ -462,6 +361,13 @@ def startup() -> None:
         interval_sec=settings.aruco_interval_sec,
         dictionary_name=settings.aruco_dictionary,
     )
+    app.state.camera_latest_jpeg = b""
+    app.state.camera_latest_ts = 0.0
+    app.state.camera_frame_lock = threading.Lock()
+    app.state.camera_reader_stop = threading.Event()
+    app.state.camera_proc = None
+    app.state.camera_ffmpeg_proc = None
+    app.state.camera_reader_thread = None
     app.state.aruco_last_snap_key = None
 
     def _on_aruco_result(result: dict) -> None:
@@ -510,10 +416,20 @@ def startup() -> None:
                 )
         except Exception:
             pass
+    if settings.camera_stream_enabled:
+        app.state.camera.start_if_enabled()
+        app.state.camera_reader_stop.clear()
+        app.state.camera_reader_thread = threading.Thread(target=_camera_reader_loop, daemon=True)
+        app.state.camera_reader_thread.start()
 
 
 @app.on_event("shutdown")
 def shutdown() -> None:
+    if getattr(app.state, "camera_reader_stop", None) is not None:
+        app.state.camera_reader_stop.set()
+    camera_thread = getattr(app.state, "camera_reader_thread", None)
+    if camera_thread and camera_thread.is_alive():
+        camera_thread.join(timeout=1.5)
     app.state.roomba.close()
     app.state.camera.stop()
     app.state.aruco.stop()
@@ -553,34 +469,25 @@ def camera_stream():
         return JSONResponse({"ok": False, "error": "camera_disabled"}, status_code=404)
     if not start.get("started"):
         return JSONResponse({"ok": False, "error": start.get("reason", "camera_not_ready")}, status_code=503)
-    try:
-        _camera_proc, ffmpeg_proc = app.state.camera.open_stream_processes()
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": f"camera_pipeline_error:{exc}"}, status_code=503)
 
     def stream_iter():
-        aruco_buf = bytearray()
+        boundary = b"--frame\r\n"
+        header = b"Content-Type: image/jpeg\r\n\r\n"
+        last_sent_ts = 0.0
         try:
             while True:
-                chunk = ffmpeg_proc.stdout.read(8192)
-                if not chunk:
-                    break
-                if app.state.aruco.enabled:
-                    aruco_buf.extend(chunk)
-                    data = bytes(aruco_buf)
-                    start = data.rfind(b"\xff\xd8")
-                    end = data.rfind(b"\xff\xd9")
-                    if start >= 0 and end > start:
-                        app.state.aruco.enqueue_jpeg_frame(data[start : end + 2])
-                        if len(aruco_buf) > 128_000:
-                            aruco_buf[:] = aruco_buf[-64_000:]
-                    elif len(aruco_buf) > 1_000_000:
-                        aruco_buf[:] = aruco_buf[-64_000:]
-                yield chunk
-        finally:
-            app.state.camera.stop()
+                with app.state.camera_frame_lock:
+                    jpeg = app.state.camera_latest_jpeg
+                    ts = app.state.camera_latest_ts
+                if jpeg and ts > last_sent_ts:
+                    last_sent_ts = ts
+                    yield boundary + header + jpeg + b"\r\n"
+                else:
+                    time.sleep(0.05)
+        except GeneratorExit:
+            return
 
-    return StreamingResponse(stream_iter(), media_type="multipart/x-mixed-replace; boundary=ffmpeg")
+    return StreamingResponse(stream_iter(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 @app.get("/aruco/status")

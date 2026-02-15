@@ -1,4 +1,4 @@
-# roomba-player v0.6.0
+# roomba-player v1.0.0
 
 > **FR**: Plateforme Python pour piloter et monitorer un Roomba via Raspberry Pi, avec interface web temps réel, caméra optionnelle, détection ArUco, plan 2D et odométrie persistée.
 >
@@ -39,11 +39,13 @@
 - Télémétrie live (`WS /ws/telemetry`)
   - batterie, bumpers, cliffs, wall/dock, encodeurs, distance/angle
 - Caméra (optionnelle)
-  - pipeline `rpicam-vid -> ffmpeg -> /camera/stream`
+  - pipeline always-on `rpicam-vid -> ffmpeg` au démarrage backend (si activée)
+  - `/camera/stream` sert les dernières frames en mémoire
 - ArUco (optionnel)
-  - détection backend périodique depuis le stream
+  - détection backend périodique (default `500ms`)
   - overlay frontend
-  - snap odométrique depuis `aruco_markers` du plan
+  - snap odométrique depuis un marqueur ArUco (mono-tag)
+  - logs realtime détaillés par frame: `FOUND`/`NOT_FOUND`, area, forme, distance/pose estimées
 - Odométrie
   - source encodeurs (Roomba 760)
   - historique JSONL (`bdd/odometry_history.jsonl`)
@@ -188,7 +190,7 @@ Tous les paramètres backend utilisent le préfixe `ROOMBA_PLAYER_`.
 ### 8.4 ArUco
 
 - `ROOMBA_PLAYER_ARUCO_ENABLED` (`true`/`false`)
-- `ROOMBA_PLAYER_ARUCO_INTERVAL_SEC` (default: `1.0`)
+- `ROOMBA_PLAYER_ARUCO_INTERVAL_SEC` (default: `0.5`)
 - `ROOMBA_PLAYER_ARUCO_DICTIONARY` (default: `DICT_4X4_50`)
 - `ROOMBA_PLAYER_ARUCO_SNAP_ENABLED` (default: `true`)
 - `ROOMBA_PLAYER_ARUCO_FOCAL_PX` (default: `900.0`)
@@ -264,7 +266,7 @@ Exemple complet: `examples/salon.yaml`.
 
 1. Charger un plan (`plans/salon.yaml`).
 2. Vérifier la pose start sur la map.
-3. Démarrer le stream caméra si utilisé.
+3. Ouvrir `/player` (caméra active automatiquement si `CAMERA_STREAM_ENABLED=true`).
 4. Vérifier la télémétrie live et les capteurs.
 5. Piloter en mode manuel.
 6. Contrôler `GET /aruco/debug` si snap ArUco utilisé.
@@ -280,7 +282,7 @@ Exemple complet: `examples/salon.yaml`.
 ### ArUco ne détecte rien
 
 - Vérifier dictionnaire (`ARUCO_DICTIONARY`) vs markers imprimés.
-- Vérifier que `/camera/stream` est actif.
+- Vérifier que `CAMERA_STREAM_ENABLED=true` et que le backend tourne.
 - Augmenter résolution caméra (`1280x720`) + lumière.
 
 ### Capteurs figés

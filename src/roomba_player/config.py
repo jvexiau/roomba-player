@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     camera_http_port: int = 8081
     camera_http_path: str = "/stream.mjpg"
     aruco_enabled: bool = False
-    aruco_interval_sec: float = 1.0
+    aruco_interval_sec: float = 0.5
     aruco_dictionary: str = "DICT_4X4_50"
     aruco_snap_enabled: bool = True
     aruco_focal_px: float = 900.0

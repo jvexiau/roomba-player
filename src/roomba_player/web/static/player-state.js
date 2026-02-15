@@ -48,7 +48,6 @@
     bumpLeft: false,
     bumpRight: false,
     arucoLogSignature: "",
-    arucoPairLogSignature: "",
     arucoFrameLogKey: "",
     arucoHadDetection: false,
   };

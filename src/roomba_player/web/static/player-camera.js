@@ -13,16 +13,6 @@
     if (box) box.style.aspectRatio = `${srcW} / ${srcH}`;
     let retryTimer = null;
 
-    const ensureStarted = async () => {
-      try {
-        const r = await fetch("/camera/start", { method: "POST" });
-        const j = await r.json();
-        RP.utils.addLog(`camera/start -> ${JSON.stringify(j)}`);
-      } catch (_) {
-        RP.utils.addLog("camera start request failed");
-      }
-    };
-
     const reloadStream = () => {
       const sep = baseUrl.includes("?") ? "&" : "?";
       RP.refs.cameraFeed.src = `${baseUrl}${sep}t=${Date.now()}`;
@@ -32,9 +22,7 @@
       if (retryTimer) return;
       retryTimer = setTimeout(() => {
         retryTimer = null;
-        ensureStarted().finally(() => {
-          reloadStream();
-        });
+        reloadStream();
       }, 1200);
     };
 
@@ -50,7 +38,6 @@
       scheduleRetry();
     };
 
-    await ensureStarted();
     RP.refs.cameraMessage.style.display = "block";
     RP.refs.cameraMessage.textContent = "Camera stream loading...";
     RP.refs.cameraFeed.style.display = "block";
