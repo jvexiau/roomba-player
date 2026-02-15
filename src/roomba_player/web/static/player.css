@@ -18,8 +18,8 @@ h2 { margin: 0 0 0.7rem; font-size: 1.05rem; }
 .joy { display: grid; grid-template-columns: 68px 68px 68px; grid-template-rows: 68px 68px 68px; gap: 0.45rem; justify-content: center; margin-top: 0.3rem; }
 .joy .btn { width: 68px; height: 68px; font-size: 1.2rem; padding: 0; }
 .joy-dock { padding: 0.2rem 0; }
-.joy-mini { margin-top: 0; grid-template-columns: 10px 10px 10px; grid-template-rows: 10px 10px 10px; gap: 2px; justify-content: end; }
-.joy-mini .btn { width: 10px; height: 10px; min-width: 10px; min-height: 10px; font-size: 6px; line-height: 1; border-radius: 2px; padding: 0; display: grid; place-items: center; }
+.joy-mini { margin-top: 0; grid-template-columns: 20px 20px 20px; grid-template-rows: 20px 20px 20px; gap: 3px; justify-content: end; }
+.joy-mini .btn { width: 20px; height: 20px; min-width: 20px; min-height: 20px; font-size: 10px; line-height: 1; border-radius: 4px; padding: 0; display: grid; place-items: center; }
 .status { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.6rem; }
 .camera-wrap { margin-bottom: 0; }
 .camera-box { position: relative; border: 1px solid var(--border); border-radius: 14px; background: #050a14; overflow: hidden; min-height: 240px; }
@@ -27,13 +27,14 @@ h2 { margin: 0 0 0.7rem; font-size: 1.05rem; }
 .camera-box canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 .camera-off { color: #cbd5e1; padding: 0.9rem; }
 .map-card, .sensors-card { min-height: 340px; }
-.card-control { padding: 0.8rem; }
+.card-control { padding: 0.5rem 0.65rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.card-control h2 { margin: 0; font-size: 0.95rem; }
+.card-control .status { margin: 0; font-size: 0.78rem; white-space: nowrap; }
 .card-control .btn { padding: 0.35rem 0.55rem; font-size: 0.85rem; border-radius: 8px; }
-.card-control .toolbar { gap: 0.35rem; margin-bottom: 0.6rem; }
-.card-control .speed { margin: 0.3rem 0 0.5rem; grid-template-columns: 140px auto; justify-content: start; gap: 0.4rem; }
-.card-control input[type="range"] { width: 140px; height: 8px; }
-.card-control .joy { grid-template-columns: 50px 50px 50px; grid-template-rows: 50px 50px 50px; gap: 0.3rem; }
-.card-control .joy .btn { width: 50px; height: 50px; font-size: 0.95rem; padding: 0; }
+.card-control .toolbar { gap: 0.3rem; margin: 0; flex-wrap: nowrap; }
+.card-control .speed { margin: 0; display: inline-grid; grid-template-columns: 160px auto; justify-content: start; gap: 0.3rem; align-items: center; }
+.card-control input[type="range"] { width: 160px; height: 8px; }
+.card-control .small { margin: 0; font-size: 0.78rem; white-space: nowrap; }
 .speed { display: grid; grid-template-columns: 1fr auto; gap: 0.6rem; align-items: center; margin: 0.6rem 0 0.8rem; }
 input[type="range"] { width: 100%; }
 .telemetry { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 0.55rem; }
@@ -61,16 +62,18 @@ pre { margin: 0; background: #0f172a; color: #e2e8f0; border-radius: 10px; paddi
   .joy-dock { align-self: flex-end; }
   .telemetry { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
   .camera-box img { max-height: 56vh; }
+  .card-control .toolbar { flex-wrap: wrap; }
 }
 
 @media (max-width: 640px) {
   .card { padding: 0.8rem; }
   .toolbar { gap: 0.35rem; }
   .btn { padding: 0.45rem 0.7rem; }
-  .card-control .speed { grid-template-columns: 110px auto; }
-  .card-control input[type="range"] { width: 110px; }
-  .card-control .joy { grid-template-columns: 46px 46px 46px; grid-template-rows: 46px 46px 46px; }
-  .card-control .joy .btn { width: 46px; height: 46px; }
+  .joy-mini { grid-template-columns: 16px 16px 16px; grid-template-rows: 16px 16px 16px; gap: 2px; }
+  .joy-mini .btn { width: 16px; height: 16px; min-width: 16px; min-height: 16px; font-size: 8px; border-radius: 3px; }
+  .card-control { align-items: flex-start; }
+  .card-control .speed { grid-template-columns: 120px auto; }
+  .card-control input[type="range"] { width: 120px; }
   .telemetry { grid-template-columns: 1fr; }
   pre { max-height: 220px; }
 }

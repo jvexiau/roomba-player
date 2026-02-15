@@ -53,7 +53,7 @@
             </div>
 
             <div class="speed">
-              <input id="speedSlider" type="range" min="80" max="320" step="10" value="250" />
+              <input id="speedSlider" type="range" min="80" max="500" step="10" value="250" />
               <strong><span id="speedValue">250</span></strong>
             </div>
 
@@ -86,36 +86,68 @@
                 <div class="bar"><span id="batteryBar" style="width: 0%"></span></div>
               </div>
               <div class="metric">
+                <div class="k">Battery mAh</div>
+                <div class="v" id="batteryMah">0 / 0</div>
+              </div>
+              <div class="metric">
                 <div class="k">State</div>
                 <div class="v" id="robotState">unknown</div>
-              </div>
-              <div class="metric">
-                <div class="k">Bumpers</div>
-                <div class="v" id="bumperState"><span class="pill warn">unknown</span></div>
-              </div>
-              <div class="metric">
-                <div class="k">Wheel drops</div>
-                <div class="v" id="wheelDropState"><span class="pill warn">unknown</span></div>
-              </div>
-              <div class="metric">
-                <div class="k">Cliff sensors</div>
-                <div class="v" id="cliffState"><span class="pill warn">unknown</span></div>
-              </div>
-              <div class="metric">
-                <div class="k">Charging source</div>
-                <div class="v" id="chargingSourceState"><span class="pill warn">unknown</span></div>
-              </div>
-              <div class="metric">
-                <div class="k">Wall + dock</div>
-                <div class="v" id="dockState"><span class="pill warn">unknown</span></div>
               </div>
               <div class="metric">
                 <div class="k">Roomba link</div>
                 <div class="v" id="linkState"><span class="pill warn">unknown</span></div>
               </div>
               <div class="metric">
-                <div class="k">Timestamp</div>
-                <div class="v" id="telemetryTs">-</div>
+                <div class="k">Bumpers</div>
+                <div class="v" id="bumperState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Any bumper</div>
+                <div class="v" id="bumperAnyState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Wheel drops</div>
+                <div class="v" id="wheelDropState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Any wheel drop</div>
+                <div class="v" id="wheelDropAnyState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Cliff sensors</div>
+                <div class="v" id="cliffState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Wall seen</div>
+                <div class="v" id="wallState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Dock visible</div>
+                <div class="v" id="dockState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Charging source</div>
+                <div class="v" id="chargingSourceState"><span class="pill warn">unknown</span></div>
+              </div>
+              <div class="metric">
+                <div class="k">Distance step</div>
+                <div class="v" id="distanceStepMm">0 mm</div>
+              </div>
+              <div class="metric">
+                <div class="k">Angle step</div>
+                <div class="v" id="angleStepDeg">0 deg</div>
+              </div>
+              <div class="metric">
+                <div class="k">Total distance</div>
+                <div class="v" id="totalDistanceMm">0 mm</div>
+              </div>
+              <div class="metric">
+                <div class="k">Total angle</div>
+                <div class="v" id="totalAngleDeg">0 deg</div>
+              </div>
+              <div class="metric">
+                <div class="k">Encoders</div>
+                <div class="v" id="encoderCounts">L:0 R:0</div>
               </div>
             </div>
           </section>

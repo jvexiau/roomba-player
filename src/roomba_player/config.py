@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     )
 
     service_name: str = "roomba-player"
-    telemetry_interval_sec: float = 1.0
+    telemetry_interval_sec: float = 0.5
     roomba_serial_port: str = "/dev/ttyUSB0"
     roomba_baudrate: int = 115200
     roomba_timeout_sec: float = 1.0
