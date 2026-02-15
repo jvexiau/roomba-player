@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     aruco_enabled: bool = False
     aruco_interval_sec: float = 1.0
     aruco_dictionary: str = "DICT_4X4_50"
+    aruco_snap_enabled: bool = True
+    aruco_focal_px: float = 900.0
+    aruco_pose_blend: float = 0.35
+    aruco_theta_blend: float = 0.2
+    aruco_heading_gain_deg: float = 8.0
     plan_default_path: str = ""
     odometry_history_path: str = "bdd/odometry_history.jsonl"
     odometry_source: str = "encoders"

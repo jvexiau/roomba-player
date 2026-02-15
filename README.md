@@ -1,4 +1,4 @@
-# roomba-player v0.5.0
+# roomba-player v0.6.0
 
 > **FR**: Plateforme Python pour piloter et monitorer un Roomba via Raspberry Pi, avec interface web temps réel, caméra optionnelle, plan du salon et odométrie persistée.
 >
@@ -129,6 +129,11 @@ Set at least in `.env.rpi`:
 - `ARUCO_ENABLED` (`true` or `false`)
 - `ARUCO_INTERVAL_SEC` (default `1.0`)
 - `ARUCO_DICTIONARY` (default `DICT_4X4_50`)
+- `ARUCO_SNAP_ENABLED` (default `true`, applies odometry correction from detected markers)
+- `ARUCO_FOCAL_PX` (default `900.0`, used with marker size to estimate distance)
+- `ARUCO_POSE_BLEND` (default `0.35`, position blend factor for ArUco correction)
+- `ARUCO_THETA_BLEND` (default `0.2`, heading blend factor for ArUco correction)
+- `ARUCO_HEADING_GAIN_DEG` (default `8.0`, small heading offset from marker image offset)
 - `ODOMETRY_HISTORY_PATH` (default: `bdd/odometry_history.jsonl`)
 - `ODOMETRY_SOURCE` (default: `encoders`)
 - `ODOMETRY_MM_PER_TICK` (default: `0.445`)

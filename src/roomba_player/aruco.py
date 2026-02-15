@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 from typing import Any
+from typing import Callable
 
 
 class ArucoService:
@@ -22,6 +23,7 @@ class ArucoService:
         self._detector = None
         self._detector_error = None
         self._last_result_monotonic = 0.0
+        self._result_callback: Callable[[dict[str, Any]], None] | None = None
         self._stats = {
             "frames_enqueued": 0,
             "frames_dropped": 0,
@@ -183,6 +185,10 @@ class ArucoService:
                 "last_result": dict(self._last_result),
             }
 
+    def set_result_callback(self, callback: Callable[[dict[str, Any]], None] | None) -> None:
+        with self._lock:
+            self._result_callback = callback
+
     def debug(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -308,3 +314,9 @@ class ArucoService:
             self._last_result_monotonic = time.monotonic()
             self._stats["last_detect_duration_ms"] = round((time.monotonic() - started) * 1000.0, 2)
             self._stats["last_detect_finished_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            callback = self._result_callback
+        if callback is not None:
+            try:
+                callback(dict(result))
+            except Exception:
+                pass

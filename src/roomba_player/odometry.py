@@ -228,6 +228,45 @@ class OdometryEstimator:
         with self._lock:
             return self._snapshot_locked()
 
+    def apply_external_pose(
+        self,
+        *,
+        x_mm: float,
+        y_mm: float,
+        theta_deg: float,
+        blend_pos: float = 0.35,
+        blend_theta: float = 0.2,
+        source: str = "external",
+    ) -> dict:
+        with self._lock:
+            bp = max(0.0, min(1.0, float(blend_pos)))
+            bt = max(0.0, min(1.0, float(blend_theta)))
+            target_x = float(x_mm)
+            target_y = float(y_mm)
+            target_theta = float(theta_deg)
+            self._x_mm += (target_x - self._x_mm) * bp
+            self._y_mm += (target_y - self._y_mm) * bp
+            current_theta_deg = math.degrees(self._theta_rad)
+            delta_theta_deg = ((target_theta - current_theta_deg + 180.0) % 360.0) - 180.0
+            new_theta_deg = current_theta_deg + delta_theta_deg * bt
+            self._theta_rad = math.radians(new_theta_deg)
+            self._theta_rad = (self._theta_rad + math.pi) % (2.0 * math.pi) - math.pi
+            self._snap_pose_to_valid_locked()
+            self._last_delta_distance_mm = 0.0
+            self._last_delta_angle_deg = 0.0
+            self._write_history_locked(
+                {
+                    "event": "external_pose",
+                    "x_mm": self._x_mm,
+                    "y_mm": self._y_mm,
+                    "theta_deg": math.degrees(self._theta_rad),
+                    "source": source,
+                    "blend_pos": bp,
+                    "blend_theta": bt,
+                }
+            )
+            return self._snapshot_locked()
+
     def set_collision_plan(self, plan: dict | None, robot_radius_mm: float = 180.0) -> None:
         contour: list[tuple[float, float]] = []
         obstacles: list[list[tuple[float, float]]] = []

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from .plan import PlanManager
 from .roomba import RoombaOI
 from .ws import control_stream, telemetry_stream
 
-app = FastAPI(title="roomba-player", version="0.5.0")
+app = FastAPI(title="roomba-player", version="0.6.0")
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 STATIC_DIR = WEB_DIR / "static"
@@ -50,6 +51,134 @@ def _apply_plan_collision_constraints(plan: dict | None) -> None:
         plan=plan,
         robot_radius_mm=settings.odometry_robot_radius_mm,
     )
+
+
+def _normalize_angle_deg(value: float) -> float:
+    a = float(value)
+    while a > 180.0:
+        a -= 360.0
+    while a < -180.0:
+        a += 360.0
+    return a
+
+
+def _aruco_observed_size_px(marker: dict) -> float | None:
+    corners = marker.get("corners")
+    if not (isinstance(corners, list) and len(corners) == 4):
+        return None
+    try:
+        pts = [(float(p[0]), float(p[1])) for p in corners]
+    except Exception:
+        return None
+    edges = []
+    for i in range(4):
+        x1, y1 = pts[i]
+        x2, y2 = pts[(i + 1) % 4]
+        edges.append(math.hypot(x2 - x1, y2 - y1))
+    if not edges:
+        return None
+    return float(sum(edges) / len(edges))
+
+
+def _aruco_axis_and_base_distance(marker_cfg: dict) -> tuple[float, float, float] | None:
+    try:
+        mx = float(marker_cfg.get("x_mm", 0.0))
+        my = float(marker_cfg.get("y_mm", 0.0))
+    except Exception:
+        return None
+    snap_pose = marker_cfg.get("snap_pose")
+    if isinstance(snap_pose, dict) and ("x_mm" in snap_pose) and ("y_mm" in snap_pose):
+        try:
+            sx = float(snap_pose.get("x_mm"))
+            sy = float(snap_pose.get("y_mm"))
+        except Exception:
+            sx = mx
+            sy = my
+        vx = sx - mx
+        vy = sy - my
+        norm = math.hypot(vx, vy)
+        if norm > 1e-6:
+            return (vx / norm, vy / norm, norm)
+    theta_deg = float(marker_cfg.get("theta_deg", 0.0) or 0.0)
+    axis_x = math.cos(math.radians(theta_deg))
+    axis_y = math.sin(math.radians(theta_deg))
+    base = float(marker_cfg.get("front_offset_mm", 0.0) or 0.0)
+    return (axis_x, axis_y, base)
+
+
+def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int) -> tuple[float, float, float] | None:
+    axis_data = _aruco_axis_and_base_distance(marker_cfg)
+    if axis_data is None:
+        return None
+    axis_x, axis_y, _base_dist = axis_data
+    marker_x = float(marker_cfg.get("x_mm", 0.0) or 0.0)
+    marker_y = float(marker_cfg.get("y_mm", 0.0) or 0.0)
+    size_mm = max(1.0, float(marker_cfg.get("size_mm", 150.0) or 150.0))
+    marker_px = _aruco_observed_size_px(marker)
+    if marker_px is None or marker_px <= 1.0:
+        return None
+    est_dist = (float(settings.aruco_focal_px) * size_mm) / marker_px
+    est_dist = max(50.0, min(6000.0, est_dist))
+    target_x = marker_x + axis_x * est_dist
+    target_y = marker_y + axis_y * est_dist
+    base_heading = math.degrees(math.atan2(-axis_y, -axis_x))
+    center = marker.get("center") if isinstance(marker.get("center"), list) else None
+    cx = float(center[0]) if center and len(center) == 2 else (frame_width * 0.5)
+    fw = max(1.0, float(frame_width or 1.0))
+    heading_offset = ((cx / fw) - 0.5) * float(settings.aruco_heading_gain_deg)
+    target_theta = _normalize_angle_deg(base_heading + heading_offset)
+    return (target_x, target_y, target_theta)
+
+
+def _apply_aruco_odometry_snap(result: dict) -> bool:
+    if not settings.aruco_snap_enabled:
+        return False
+    if not isinstance(result, dict) or not result.get("ok"):
+        return False
+    markers = result.get("markers")
+    if not isinstance(markers, list) or not markers:
+        return False
+    plan = app.state.plan.get() or {}
+    plan_markers = plan.get("aruco_markers") if isinstance(plan, dict) else None
+    if not isinstance(plan_markers, list) or not plan_markers:
+        return False
+    marker_index: dict[int, dict] = {}
+    for m in plan_markers:
+        if not isinstance(m, dict) or "id" not in m:
+            continue
+        try:
+            marker_index[int(m.get("id"))] = m
+        except Exception:
+            continue
+    if not marker_index:
+        return False
+    frame_width = int(result.get("frame_width", 0) or 0)
+    ranked = sorted(
+        [m for m in markers if isinstance(m, dict) and "id" in m],
+        key=lambda m: float(m.get("area_px", 0.0) or 0.0),
+        reverse=True,
+    )
+    for marker in ranked:
+        try:
+            marker_id = int(marker.get("id"))
+        except Exception:
+            continue
+        marker_cfg = marker_index.get(marker_id)
+        if marker_cfg is None:
+            continue
+        pose = _compute_aruco_target_pose(marker_cfg, marker, frame_width)
+        if pose is None:
+            continue
+        app.state.odometry.apply_external_pose(
+            x_mm=pose[0],
+            y_mm=pose[1],
+            theta_deg=pose[2],
+            blend_pos=settings.aruco_pose_blend,
+            blend_theta=settings.aruco_theta_blend,
+            source="aruco_snap",
+        )
+        return True
+    return False
 
 
 @app.on_event("startup")
@@ -89,6 +218,30 @@ def startup() -> None:
         interval_sec=settings.aruco_interval_sec,
         dictionary_name=settings.aruco_dictionary,
     )
+    app.state.aruco_last_snap_key = None
+
+    def _on_aruco_result(result: dict) -> None:
+        if not isinstance(result, dict):
+            return
+        if not result.get("ok"):
+            return
+        ts = str(result.get("timestamp") or "")
+        id_list: list[int] = []
+        for m in (result.get("markers") or []):
+            if not isinstance(m, dict) or "id" not in m:
+                continue
+            try:
+                id_list.append(int(m.get("id")))
+            except Exception:
+                continue
+        ids = tuple(sorted(id_list))
+        snap_key = (ts, ids)
+        if snap_key == app.state.aruco_last_snap_key:
+            return
+        if _apply_aruco_odometry_snap(result):
+            app.state.aruco_last_snap_key = snap_key
+
+    app.state.aruco.set_result_callback(_on_aruco_result)
     app.state.aruco.start()
     app.state.odometry.set_collision_plan(None, robot_radius_mm=settings.odometry_robot_radius_mm)
 
