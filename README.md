@@ -1,100 +1,63 @@
 # roomba-player v1.0.0
 
-> **FR**: Plateforme Python pour piloter et monitorer un Roomba via Raspberry Pi, avec interface web temps réel, caméra optionnelle, détection ArUco, plan 2D et odométrie persistée.
->
-> **EN**: Python platform to control and monitor a Roomba via Raspberry Pi, with real-time web UI, optional camera stream, ArUco detection, 2D plan and persisted odometry.
+[Go directly to French version (FR)](#version-francaise)
 
-## Sommaire
+## English
 
-- [1. Vue d'ensemble](#1-vue-densemble)
-- [2. Fonctionnalités](#2-fonctionnalités)
-- [3. Architecture rapide](#3-architecture-rapide)
-- [4. Requirements / Prérequis](#4-requirements--prérequis)
-- [5. Installation locale](#5-installation-locale)
-- [6. Usage local](#6-usage-local)
-- [7. Déploiement Raspberry Pi](#7-déploiement-raspberry-pi)
-- [8. Paramètres de configuration](#8-paramètres-de-configuration)
-- [9. Format des plans](#9-format-des-plans)
-- [10. Endpoints et WebSockets](#10-endpoints-et-websockets)
-- [11. Workflow recommandé](#11-workflow-recommandé)
-- [12. Troubleshooting](#12-troubleshooting)
-- [13. License](#13-license)
+### Overview
 
-## 1. Vue d'ensemble
+`roomba-player` is a FastAPI + web player platform to control and monitor a Roomba from a Raspberry Pi.
 
-`roomba-player` expose une API FastAPI + une UI web `/player` pour:
+It includes:
+- real-time control (`WS /ws/control`)
+- real-time telemetry (`WS /ws/telemetry`)
+- always-on camera pipeline (if enabled)
+- ArUco detection + overlay + odometry snap (single marker mode)
+- 2D map rendering and persisted odometry
 
-- piloter un Roomba (drive/modes/dock)
-- visualiser la télémétrie live
-- afficher un plan 2D du salon
-- maintenir une odométrie persistée et contrainte par collision (murs + objets)
-- corriger la pose via ArUco (snap odométrique)
+### Main Features
 
-## 2. Fonctionnalités
-
-- Contrôle temps réel (`WS /ws/control`)
+- Live control
   - joystick
-  - clavier AZERTY (`z q s d`)
+  - keyboard (`z q s d`)
   - hold-to-move / release-to-stop
-- Télémétrie live (`WS /ws/telemetry`)
-  - batterie, bumpers, cliffs, wall/dock, encodeurs, distance/angle
-- Caméra (optionnelle)
-  - pipeline always-on `rpicam-vid -> ffmpeg` au démarrage backend (si activée)
-  - `/camera/stream` sert les dernières frames en mémoire
-- ArUco (optionnel)
-  - détection backend périodique (default `500ms`)
-  - overlay frontend
-  - snap odométrique depuis un marqueur ArUco (mono-tag)
-  - logs realtime détaillés par frame: `FOUND`/`NOT_FOUND`, area, forme, distance/pose estimées
-- Odométrie
-  - source encodeurs (Roomba 760)
-  - historique JSONL (`bdd/odometry_history.jsonl`)
-  - restauration auto au démarrage
-  - collision planifiée (anti traversée murs/objets)
-  - glissement tangent renforcé le long des obstacles
-- Plan
-  - chargement JSON/YAML
-  - rendu map + objets + IDs ArUco
-  - reset historique + repositionnement sur start pose
+- Live sensors/telemetry
+  - battery, bumpers, cliffs, wall/dock, encoders, distance/angle
+- Camera
+  - always-on backend pipeline when enabled
+  - `/camera/stream` serves latest in-memory frames
+- ArUco
+  - periodic detection (`ROOMBA_PLAYER_ARUCO_INTERVAL_SEC`, default `0.5`)
+  - overlay on player camera
+  - odometry correction from plan marker references
+  - realtime logs per analysis frame: `FOUND` / `NOT_FOUND` + detailed marker metrics
+- Odometry
+  - encoder based (Roomba 760)
+  - JSONL history (`bdd/odometry_history.jsonl`)
+  - restore on startup
+  - collision constraints against room/object geometry
 - Ops
-  - `make deploy-rpi`, `make restart-rpi`, `make stop-rpi`, `make logs-rpi`
+  - `make deploy-rpi`
+  - `make restart-rpi`
+  - `make stop-rpi`
+  - `make logs-rpi`
 
-## 3. Architecture rapide
+### Architecture
 
 - Backend: `src/roomba_player/*.py`
 - Frontend: `src/roomba_player/web/*`
-- Plan exemple: `examples/salon.yaml`
+- Example plan: `examples/salon.yaml`
 - Tests: `tests/*`
-- Déploiement: `scripts/deploy_rpi.sh`
+- RPi deploy script: `scripts/deploy_rpi.sh`
 
-## 4. Requirements / Prérequis
-
-### Python
+### Requirements
 
 - Python `>=3.11`
-- Dépendances principales:
-  - `fastapi`
-  - `uvicorn`
-  - `websockets`
-  - `pydantic`, `pydantic-settings`
-  - `python-dotenv`
-  - `PyYAML`
-  - `pyserial`
-  - `opencv-contrib-python-headless`
+- Main Python deps: `fastapi`, `uvicorn`, `websockets`, `pydantic`, `pydantic-settings`, `python-dotenv`, `PyYAML`, `pyserial`, `opencv-contrib-python-headless`
+- Dev/RPi tools: `bash`, `ssh`, `rsync`, `make`
+- Raspberry Pi binaries: `rpicam-vid`, `ffmpeg`
 
-### Outils système (poste de dev)
-
-- `bash`
-- `ssh`
-- `rsync`
-- `make`
-
-### Outils système (Raspberry Pi)
-
-- `rpicam-vid`
-- `ffmpeg`
-
-## 5. Installation locale
+### Installation (local)
 
 ```bash
 python -m venv .venv
@@ -103,22 +66,18 @@ pip install -e .[dev]
 cp .env.example .env
 ```
 
-## 6. Usage local
-
-Démarrage:
+### Run (local)
 
 ```bash
 uvicorn roomba_player.app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-UI:
-
 - Home: `http://<host>:8000/`
 - Player: `http://<host>:8000/player`
 
-## 7. Déploiement Raspberry Pi
+### Raspberry Pi Deployment
 
-### 7.1 Préparer la config
+Prepare:
 
 ```bash
 cp .env.rpi.example .env.rpi
@@ -126,54 +85,35 @@ mkdir -p plans
 cp examples/salon.yaml plans/salon.yaml
 ```
 
-Renseigner au minimum dans `.env.rpi`:
-
+Minimum `.env.rpi` values:
 - `RPI_HOST`, `RPI_USER`, `RPI_PORT`, `RPI_APP_DIR`
 - `ROOMBA_SERIAL_PORT`, `ROOMBA_BAUDRATE`, `ROOMBA_TIMEOUT_SEC`
-- `PLAN_DEFAULT_PATH` (ex: `plans/salon.yaml`)
+- `PLAN_DEFAULT_PATH` (example: `plans/salon.yaml`)
 
-### 7.2 Déployer
+Commands:
 
 ```bash
 make deploy-rpi
-```
-
-### 7.3 Redémarrer sans resync
-
-```bash
 make restart-rpi
-```
-
-### 7.4 Stopper le service
-
-```bash
 make stop-rpi
-```
-
-### 7.5 Suivre les logs
-
-```bash
 make logs-rpi
 ```
 
-## 8. Paramètres de configuration
+### Configuration Parameters
 
-Tous les paramètres backend utilisent le préfixe `ROOMBA_PLAYER_`.
+All backend env vars use `ROOMBA_PLAYER_` prefix.
 
-### 8.1 Paramètres généraux
-
+General:
 - `ROOMBA_PLAYER_SERVICE_NAME` (default: `roomba-player`)
 - `ROOMBA_PLAYER_TELEMETRY_INTERVAL_SEC` (default: `0.1`)
 
-### 8.2 Roomba / série
-
+Roomba/Serial:
 - `ROOMBA_PLAYER_ROOMBA_SERIAL_PORT` (default: `/dev/ttyUSB0`)
 - `ROOMBA_PLAYER_ROOMBA_BAUDRATE` (default: `115200`)
 - `ROOMBA_PLAYER_ROOMBA_TIMEOUT_SEC` (default: `1.0`)
 
-### 8.3 Caméra
-
-- `ROOMBA_PLAYER_CAMERA_STREAM_ENABLED` (`true`/`false`)
+Camera:
+- `ROOMBA_PLAYER_CAMERA_STREAM_ENABLED`
 - `ROOMBA_PLAYER_CAMERA_WIDTH` (default: `800`)
 - `ROOMBA_PLAYER_CAMERA_HEIGHT` (default: `600`)
 - `ROOMBA_PLAYER_CAMERA_FRAMERATE` (default: `15`)
@@ -187,9 +127,8 @@ Tous les paramètres backend utilisent le préfixe `ROOMBA_PLAYER_`.
 - `ROOMBA_PLAYER_CAMERA_HTTP_PORT` (default: `8081`)
 - `ROOMBA_PLAYER_CAMERA_HTTP_PATH` (default: `/stream.mjpg`)
 
-### 8.4 ArUco
-
-- `ROOMBA_PLAYER_ARUCO_ENABLED` (`true`/`false`)
+ArUco:
+- `ROOMBA_PLAYER_ARUCO_ENABLED`
 - `ROOMBA_PLAYER_ARUCO_INTERVAL_SEC` (default: `0.5`)
 - `ROOMBA_PLAYER_ARUCO_DICTIONARY` (default: `DICT_4X4_50`)
 - `ROOMBA_PLAYER_ARUCO_SNAP_ENABLED` (default: `true`)
@@ -200,17 +139,7 @@ Tous les paramètres backend utilisent le préfixe `ROOMBA_PLAYER_`.
 - `ROOMBA_PLAYER_ARUCO_THETA_BLEND` (default: `0.2`)
 - `ROOMBA_PLAYER_ARUCO_HEADING_GAIN_DEG` (default: `8.0`)
 
-ArUco supportés:
-
-- `DICT_4X4_50`, `DICT_4X4_100`, `DICT_4X4_250`, `DICT_4X4_1000`
-- `DICT_5X5_50`, `DICT_5X5_100`, `DICT_5X5_250`, `DICT_5X5_1000`
-- `DICT_6X6_50`, `DICT_6X6_100`, `DICT_6X6_250`, `DICT_6X6_1000`
-- `DICT_7X7_50`, `DICT_7X7_100`, `DICT_7X7_250`, `DICT_7X7_1000`
-- `DICT_ARUCO_ORIGINAL`
-- `DICT_APRILTAG_16h5`, `DICT_APRILTAG_25h9`, `DICT_APRILTAG_36h10`, `DICT_APRILTAG_36h11`
-
-### 8.5 Odométrie
-
+Odometry:
 - `ROOMBA_PLAYER_ODOMETRY_HISTORY_PATH` (default: `bdd/odometry_history.jsonl`)
 - `ROOMBA_PLAYER_ODOMETRY_SOURCE` (default: `encoders`)
 - `ROOMBA_PLAYER_ODOMETRY_MM_PER_TICK` (default: `0.445`)
@@ -219,29 +148,25 @@ ArUco supportés:
 - `ROOMBA_PLAYER_ODOMETRY_ROBOT_RADIUS_MM` (default: `180.0`)
 - `ROOMBA_PLAYER_ODOMETRY_COLLISION_MARGIN_SCALE` (default: `0.55`)
 
-### 8.6 Plan par défaut
+Plan:
+- `ROOMBA_PLAYER_PLAN_DEFAULT_PATH`
 
-- `ROOMBA_PLAYER_PLAN_DEFAULT_PATH` (default: empty)
+### Plan Format
 
-## 9. Format des plans
-
-Un plan doit au minimum contenir:
-
-- `contour`: polygone pièce
+Required fields:
+- `contour`
 - `start_pose`
 - `object_shapes`
 - `objects`
 
-Optionnel:
+Optional:
+- `aruco_markers`
 
-- `aruco_markers` pour snap odométrique depuis ArUco
+See: `examples/salon.yaml`
 
-Exemple complet: `examples/salon.yaml`.
+### API / WebSockets
 
-## 10. Endpoints et WebSockets
-
-### HTTP
-
+HTTP:
 - `GET /`
 - `GET /player`
 - `GET /health`
@@ -257,49 +182,250 @@ Exemple complet: `examples/salon.yaml`.
 - `POST /api/odometry/reset`
 - `POST /api/odometry/reset-history`
 
-### WebSocket
-
+WebSocket:
 - `WS /ws/telemetry`
 - `WS /ws/control`
 
-## 11. Workflow recommandé
+### Recommended Workflow
+
+1. Load a plan (`plans/salon.yaml`).
+2. Check start pose on map.
+3. Open `/player` (camera auto-active if enabled).
+4. Check telemetry and sensors.
+5. Drive manually.
+6. Check `GET /aruco/debug` for ArUco diagnostics.
+7. If odometry drifts, use `reset-history + start pose`.
+
+### Troubleshooting
+
+ArUco overlay stale:
+- check `GET /aruco/debug`
+- verify camera pipeline is active
+
+No ArUco detection:
+- verify `ARUCO_DICTIONARY` matches printed markers
+- verify `CAMERA_STREAM_ENABLED=true`
+- increase camera resolution/light
+
+Sensor stream appears frozen:
+- check telemetry fields: `sensor_stream_alive`, `sensor_stream_last_update_age_sec`, `sensor_stream_restart_count`, `sensor_stream_last_error`
+
+Collision too early/late:
+- tune `ODOMETRY_ROBOT_RADIUS_MM`, `ODOMETRY_COLLISION_MARGIN_SCALE`
+
+---
+
+## Version Francaise
+
+### Vue d'ensemble
+
+`roomba-player` est une plateforme FastAPI + interface web `/player` pour piloter et monitorer un Roomba via Raspberry Pi.
+
+Elle inclut:
+- contrôle temps réel (`WS /ws/control`)
+- télémétrie temps réel (`WS /ws/telemetry`)
+- pipeline caméra always-on (si activée)
+- détection ArUco + overlay + snap odométrique (mode mono marqueur)
+- rendu plan 2D et odométrie persistée
+
+### Fonctionnalités principales
+
+- Contrôle live
+  - joystick
+  - clavier (`z q s d`)
+  - hold-to-move / release-to-stop
+- Capteurs/télémétrie live
+  - batterie, bumpers, cliffs, wall/dock, encodeurs, distance/angle
+- Caméra
+  - pipeline backend always-on quand activée
+  - `/camera/stream` sert les dernières frames en mémoire
+- ArUco
+  - détection périodique (`ROOMBA_PLAYER_ARUCO_INTERVAL_SEC`, défaut `0.5`)
+  - overlay sur la caméra du player
+  - correction odométrique depuis les marqueurs du plan
+  - logs realtime par frame d’analyse: `FOUND` / `NOT_FOUND` + métriques détaillées
+- Odométrie
+  - basée sur encodeurs (Roomba 760)
+  - historique JSONL (`bdd/odometry_history.jsonl`)
+  - restauration au démarrage
+  - contraintes de collision murs/objets
+- Ops
+  - `make deploy-rpi`
+  - `make restart-rpi`
+  - `make stop-rpi`
+  - `make logs-rpi`
+
+### Architecture
+
+- Backend: `src/roomba_player/*.py`
+- Frontend: `src/roomba_player/web/*`
+- Plan exemple: `examples/salon.yaml`
+- Tests: `tests/*`
+- Déploiement RPi: `scripts/deploy_rpi.sh`
+
+### Prérequis
+
+- Python `>=3.11`
+- Dépendances Python principales: `fastapi`, `uvicorn`, `websockets`, `pydantic`, `pydantic-settings`, `python-dotenv`, `PyYAML`, `pyserial`, `opencv-contrib-python-headless`
+- Outils dev/RPi: `bash`, `ssh`, `rsync`, `make`
+- Binaires Raspberry Pi: `rpicam-vid`, `ffmpeg`
+
+### Installation locale
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+cp .env.example .env
+```
+
+### Lancement local
+
+```bash
+uvicorn roomba_player.app:app --reload --host 0.0.0.0 --port 8000
+```
+
+- Home: `http://<host>:8000/`
+- Player: `http://<host>:8000/player`
+
+### Deploiement Raspberry Pi
+
+Preparation:
+
+```bash
+cp .env.rpi.example .env.rpi
+mkdir -p plans
+cp examples/salon.yaml plans/salon.yaml
+```
+
+Minimum a renseigner dans `.env.rpi`:
+- `RPI_HOST`, `RPI_USER`, `RPI_PORT`, `RPI_APP_DIR`
+- `ROOMBA_SERIAL_PORT`, `ROOMBA_BAUDRATE`, `ROOMBA_TIMEOUT_SEC`
+- `PLAN_DEFAULT_PATH` (ex: `plans/salon.yaml`)
+
+Commandes:
+
+```bash
+make deploy-rpi
+make restart-rpi
+make stop-rpi
+make logs-rpi
+```
+
+### Parametres de configuration
+
+Tous les paramètres backend utilisent le préfixe `ROOMBA_PLAYER_`.
+
+Generaux:
+- `ROOMBA_PLAYER_SERVICE_NAME` (defaut: `roomba-player`)
+- `ROOMBA_PLAYER_TELEMETRY_INTERVAL_SEC` (defaut: `0.1`)
+
+Roomba/Serie:
+- `ROOMBA_PLAYER_ROOMBA_SERIAL_PORT` (defaut: `/dev/ttyUSB0`)
+- `ROOMBA_PLAYER_ROOMBA_BAUDRATE` (defaut: `115200`)
+- `ROOMBA_PLAYER_ROOMBA_TIMEOUT_SEC` (defaut: `1.0`)
+
+Camera:
+- `ROOMBA_PLAYER_CAMERA_STREAM_ENABLED`
+- `ROOMBA_PLAYER_CAMERA_WIDTH` (defaut: `800`)
+- `ROOMBA_PLAYER_CAMERA_HEIGHT` (defaut: `600`)
+- `ROOMBA_PLAYER_CAMERA_FRAMERATE` (defaut: `15`)
+- `ROOMBA_PLAYER_CAMERA_PROFILE` (defaut: `high`)
+- `ROOMBA_PLAYER_CAMERA_SHUTTER` (defaut: `12000`)
+- `ROOMBA_PLAYER_CAMERA_DENOISE` (defaut: `cdn_fast`)
+- `ROOMBA_PLAYER_CAMERA_SHARPNESS` (defaut: `1.1`)
+- `ROOMBA_PLAYER_CAMERA_AWB` (defaut: `auto`)
+- `ROOMBA_PLAYER_CAMERA_H264_TCP_PORT` (defaut: `9100`)
+- `ROOMBA_PLAYER_CAMERA_HTTP_BIND_HOST` (defaut: `0.0.0.0`)
+- `ROOMBA_PLAYER_CAMERA_HTTP_PORT` (defaut: `8081`)
+- `ROOMBA_PLAYER_CAMERA_HTTP_PATH` (defaut: `/stream.mjpg`)
+
+ArUco:
+- `ROOMBA_PLAYER_ARUCO_ENABLED`
+- `ROOMBA_PLAYER_ARUCO_INTERVAL_SEC` (defaut: `0.5`)
+- `ROOMBA_PLAYER_ARUCO_DICTIONARY` (defaut: `DICT_4X4_50`)
+- `ROOMBA_PLAYER_ARUCO_SNAP_ENABLED` (defaut: `true`)
+- `ROOMBA_PLAYER_ARUCO_FOCAL_PX` (defaut: `900.0`)
+- `ROOMBA_PLAYER_ARUCO_MARKER_SIZE_CM` (defaut: `15.0`)
+- `ROOMBA_PLAYER_ARUCO_OVERLAY_FLIP_X` (defaut: `false`)
+- `ROOMBA_PLAYER_ARUCO_POSE_BLEND` (defaut: `0.35`)
+- `ROOMBA_PLAYER_ARUCO_THETA_BLEND` (defaut: `0.2`)
+- `ROOMBA_PLAYER_ARUCO_HEADING_GAIN_DEG` (defaut: `8.0`)
+
+Odometrie:
+- `ROOMBA_PLAYER_ODOMETRY_HISTORY_PATH` (defaut: `bdd/odometry_history.jsonl`)
+- `ROOMBA_PLAYER_ODOMETRY_SOURCE` (defaut: `encoders`)
+- `ROOMBA_PLAYER_ODOMETRY_MM_PER_TICK` (defaut: `0.445`)
+- `ROOMBA_PLAYER_ODOMETRY_LINEAR_SCALE` (defaut: `1.0`)
+- `ROOMBA_PLAYER_ODOMETRY_ANGULAR_SCALE` (defaut: `1.0`)
+- `ROOMBA_PLAYER_ODOMETRY_ROBOT_RADIUS_MM` (defaut: `180.0`)
+- `ROOMBA_PLAYER_ODOMETRY_COLLISION_MARGIN_SCALE` (defaut: `0.55`)
+
+Plan:
+- `ROOMBA_PLAYER_PLAN_DEFAULT_PATH`
+
+### Format des plans
+
+Champs requis:
+- `contour`
+- `start_pose`
+- `object_shapes`
+- `objects`
+
+Optionnel:
+- `aruco_markers`
+
+Voir: `examples/salon.yaml`
+
+### API / WebSockets
+
+HTTP:
+- `GET /`
+- `GET /player`
+- `GET /health`
+- `GET /telemetry`
+- `POST /camera/start`
+- `GET /camera/stream`
+- `GET /aruco/status`
+- `GET /aruco/debug`
+- `GET /api/plan`
+- `POST /api/plan/load-file`
+- `POST /api/plan/load-json`
+- `GET /api/odometry`
+- `POST /api/odometry/reset`
+- `POST /api/odometry/reset-history`
+
+WebSocket:
+- `WS /ws/telemetry`
+- `WS /ws/control`
+
+### Workflow recommande
 
 1. Charger un plan (`plans/salon.yaml`).
-2. Vérifier la pose start sur la map.
-3. Ouvrir `/player` (caméra active automatiquement si `CAMERA_STREAM_ENABLED=true`).
-4. Vérifier la télémétrie live et les capteurs.
-5. Piloter en mode manuel.
-6. Contrôler `GET /aruco/debug` si snap ArUco utilisé.
-7. Si dérive odométrique, utiliser `reset-history + start pose`.
+2. Verifier la pose start sur la map.
+3. Ouvrir `/player` (camera active automatiquement si activee).
+4. Verifier telemetry/capteurs.
+5. Piloter manuellement.
+6. Verifier `GET /aruco/debug` pour le diagnostic ArUco.
+7. En cas de derive odometrique, utiliser `reset-history + start pose`.
 
-## 12. Troubleshooting
+### Depannage
 
-### ArUco détecté mais overlay reste affiché
+Overlay ArUco stale:
+- verifier `GET /aruco/debug`
+- verifier pipeline camera actif
 
-- Le backend marque désormais les résultats périmés (`stale`) et l’overlay est effacé.
-- Vérifier `GET /aruco/debug`.
+Pas de detection ArUco:
+- verifier `ARUCO_DICTIONARY`
+- verifier `CAMERA_STREAM_ENABLED=true`
+- augmenter resolution/lumiere
 
-### ArUco ne détecte rien
+Capteurs figes:
+- verifier `sensor_stream_alive`, `sensor_stream_last_update_age_sec`, `sensor_stream_restart_count`, `sensor_stream_last_error`
 
-- Vérifier dictionnaire (`ARUCO_DICTIONARY`) vs markers imprimés.
-- Vérifier que `CAMERA_STREAM_ENABLED=true` et que le backend tourne.
-- Augmenter résolution caméra (`1280x720`) + lumière.
+Collision trop tot/tard:
+- ajuster `ODOMETRY_ROBOT_RADIUS_MM`, `ODOMETRY_COLLISION_MARGIN_SCALE`
 
-### Capteurs figés
-
-- Le watchdog stream capteur est auto-restart.
-- Vérifier dans la télémétrie:
-  - `sensor_stream_alive`
-  - `sensor_stream_last_update_age_sec`
-  - `sensor_stream_restart_count`
-  - `sensor_stream_last_error`
-
-### Collision trop tôt / trop tard
-
-- Ajuster:
-  - `ODOMETRY_ROBOT_RADIUS_MM`
-  - `ODOMETRY_COLLISION_MARGIN_SCALE`
-
-## 13. License
+## License
 
 MIT
