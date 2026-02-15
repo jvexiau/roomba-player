@@ -10,6 +10,7 @@ Rules:
 - never store credentials/tokens/private hostnames here
 - never store personal shell history or local machine paths outside this repo
 - prefer repo-relative commands and paths
+- keep this file updated at each meaningful code/doc/behavior change so session resume stays coherent
 
 ## Project Snapshot
 - Name: `roomba-player`
