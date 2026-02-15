@@ -1,4 +1,4 @@
-from roomba_player.app import _compute_aruco_target_pose
+from roomba_player.app import _compute_aruco_pair_target_pose, _compute_aruco_target_pose
 
 
 def test_compute_aruco_target_pose_uses_marker_size_for_distance() -> None:
@@ -25,3 +25,48 @@ def test_compute_aruco_target_pose_uses_marker_size_for_distance() -> None:
     assert -100.0 <= theta_deg <= -80.0
     assert 0.9 <= pos_blend <= 1.0
     assert 0.9 <= theta_blend <= 1.0
+
+
+def test_compute_aruco_pair_target_pose_uses_two_markers_spacing() -> None:
+    marker_a_cfg = {
+        "id": 10,
+        "x_mm": 1000,
+        "y_mm": 3000,
+        "theta_deg": 90,
+        "size_mm": 150,
+    }
+    marker_b_cfg = {
+        "id": 11,
+        "x_mm": 1150,
+        "y_mm": 3000,
+        "theta_deg": 90,
+        "size_mm": 150,
+    }
+    marker_a_detection = {
+        "id": 10,
+        "center": [260, 240],
+        "area_px": 3200,
+        "corners": [[225, 205], [295, 205], [295, 275], [225, 275]],
+    }
+    marker_b_detection = {
+        "id": 11,
+        "center": [420, 240],
+        "area_px": 3200,
+        "corners": [[385, 205], [455, 205], [455, 275], [385, 275]],
+    }
+    pose = _compute_aruco_pair_target_pose(
+        marker_a_cfg,
+        marker_a_detection,
+        marker_b_cfg,
+        marker_b_detection,
+        frame_width=640,
+    )
+    assert pose is not None
+    x_mm, y_mm, theta_deg, pos_blend, theta_blend = pose
+    # Pair midpoint is x=1075mm; we expect a strong forward offset on +Y axis.
+    assert 1000.0 <= x_mm <= 1150.0
+    assert y_mm > 3000.0
+    # Robot should face the pair (heading around -90deg).
+    assert -110.0 <= theta_deg <= -70.0
+    assert 0.92 <= pos_blend <= 1.0
+    assert 0.94 <= theta_blend <= 1.0

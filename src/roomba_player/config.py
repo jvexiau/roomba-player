@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     aruco_dictionary: str = "DICT_4X4_50"
     aruco_snap_enabled: bool = True
     aruco_focal_px: float = 900.0
+    aruco_marker_size_cm: float = 15.0
+    aruco_overlay_flip_x: bool = False
     aruco_pose_blend: float = 0.35
     aruco_theta_blend: float = 0.2
     aruco_heading_gain_deg: float = 8.0

@@ -55,7 +55,7 @@
   - rendu map + objets + IDs ArUco
   - reset historique + repositionnement sur start pose
 - Ops
-  - `make deploy-rpi`, `make restart-rpi`, `make stop`, `make logs-rpi`
+  - `make deploy-rpi`, `make restart-rpi`, `make stop-rpi`, `make logs-rpi`
 
 ## 3. Architecture rapide
 
@@ -145,7 +145,7 @@ make restart-rpi
 ### 7.4 Stopper le service
 
 ```bash
-make stop
+make stop-rpi
 ```
 
 ### 7.5 Suivre les logs
@@ -192,6 +192,8 @@ Tous les paramètres backend utilisent le préfixe `ROOMBA_PLAYER_`.
 - `ROOMBA_PLAYER_ARUCO_DICTIONARY` (default: `DICT_4X4_50`)
 - `ROOMBA_PLAYER_ARUCO_SNAP_ENABLED` (default: `true`)
 - `ROOMBA_PLAYER_ARUCO_FOCAL_PX` (default: `900.0`)
+- `ROOMBA_PLAYER_ARUCO_MARKER_SIZE_CM` (default: `15.0`)
+- `ROOMBA_PLAYER_ARUCO_OVERLAY_FLIP_X` (default: `false`)
 - `ROOMBA_PLAYER_ARUCO_POSE_BLEND` (default: `0.35`)
 - `ROOMBA_PLAYER_ARUCO_THETA_BLEND` (default: `0.2`)
 - `ROOMBA_PLAYER_ARUCO_HEADING_GAIN_DEG` (default: `8.0`)

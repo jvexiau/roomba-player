@@ -7,6 +7,10 @@
       return;
     }
     const baseUrl = "/camera/stream";
+    const box = RP.refs.cameraBox;
+    const srcW = Math.max(1, Number(RP.config.cameraWidth || 640));
+    const srcH = Math.max(1, Number(RP.config.cameraHeight || 480));
+    if (box) box.style.aspectRatio = `${srcW} / ${srcH}`;
     let retryTimer = null;
 
     const ensureStarted = async () => {

@@ -22,9 +22,9 @@ h2 { margin: 0 0 0.7rem; font-size: 1.05rem; }
 .joy-mini .btn { width: 20px; height: 20px; min-width: 20px; min-height: 20px; font-size: 10px; line-height: 1; border-radius: 4px; padding: 0; display: grid; place-items: center; }
 .status { font-size: 0.9rem; color: var(--muted); margin-bottom: 0.6rem; }
 .camera-wrap { margin-bottom: 0; }
-.camera-box { position: relative; border: 1px solid var(--border); border-radius: 14px; background: #050a14; overflow: hidden; min-height: 240px; }
-.camera-box img { display: block; width: 100%; height: auto; max-height: min(62vh, 700px); object-fit: contain; background: #000; }
-.camera-box canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.camera-box { position: relative; border: 1px solid var(--border); border-radius: 14px; background: #050a14; overflow: hidden; min-height: 240px; max-height: min(62vh, 700px); aspect-ratio: 4 / 3; }
+.camera-box img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: fill; background: #000; }
+.camera-box canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
 .camera-off { color: #cbd5e1; padding: 0.9rem; }
 .map-card, .sensors-card { min-height: 340px; }
 .card-control { padding: 0.5rem 0.65rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }

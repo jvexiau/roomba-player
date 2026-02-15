@@ -7,6 +7,7 @@
     speedSlider: document.getElementById("speedSlider"),
     speedValue: document.getElementById("speedValue"),
     cameraFeed: document.getElementById("cameraFeed"),
+    cameraBox: document.getElementById("cameraBox"),
     cameraOverlay: document.getElementById("cameraOverlay"),
     cameraMessage: document.getElementById("cameraMessage"),
     arucoStatusNode: document.getElementById("arucoStatus"),
@@ -46,6 +47,9 @@
     currentOdom: { x_mm: 0, y_mm: 0, theta_deg: 0 },
     bumpLeft: false,
     bumpRight: false,
+    arucoLogSignature: "",
+    arucoPairLogSignature: "",
+    arucoHadDetection: false,
   };
 
   window.RP = { config, refs, state };

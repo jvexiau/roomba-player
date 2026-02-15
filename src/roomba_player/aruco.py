@@ -23,6 +23,7 @@ class ArucoService:
         self._detector = None
         self._detector_error = None
         self._last_result_monotonic = 0.0
+        self._last_frame_monotonic = 0.0
         self._result_callback: Callable[[dict[str, Any]], None] | None = None
         self._stats = {
             "frames_enqueued": 0,
@@ -137,6 +138,7 @@ class ArucoService:
                 self._stats["frames_enqueued"] += 1
                 self._stats["last_frame_bytes"] = len(frame)
                 self._stats["last_frame_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                self._last_frame_monotonic = time.monotonic()
         except queue.Full:
             try:
                 _ = self._queue.get_nowait()
@@ -149,6 +151,7 @@ class ArucoService:
                     self._stats["frames_dropped"] += 1
                     self._stats["last_frame_bytes"] = len(frame)
                     self._stats["last_frame_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    self._last_frame_monotonic = time.monotonic()
             except Exception:
                 pass
 
@@ -156,22 +159,31 @@ class ArucoService:
         with self._lock:
             result = dict(self._last_result)
             age_sec = time.monotonic() - self._last_result_monotonic if self._last_result_monotonic > 0 else None
-            stale_after_sec = max(1.5, self.interval_sec * 2.5)
-            if (
-                self.enabled
-                and age_sec is not None
-                and age_sec > stale_after_sec
-            ):
-                return {
-                    "ok": False,
-                    "enabled": True,
-                    "reason": "stale",
-                    "markers": [],
-                    "count": 0,
-                    "timestamp": result.get("timestamp"),
-                    "frame_width": int(result.get("frame_width", 0) or 0),
-                    "frame_height": int(result.get("frame_height", 0) or 0),
-                }
+            frame_age_sec = time.monotonic() - self._last_frame_monotonic if self._last_frame_monotonic > 0 else None
+            stale_warn_after_sec = max(2.5, self.interval_sec * 3.5)
+            stale_hard_after_sec = max(8.0, self.interval_sec * 10.0)
+            worker_alive = bool(self._thread and self._thread.is_alive())
+            if self.enabled and age_sec is not None:
+                if age_sec > stale_hard_after_sec:
+                    return {
+                        "ok": False,
+                        "enabled": True,
+                        "reason": "stale",
+                        "markers": [],
+                        "count": 0,
+                        "timestamp": result.get("timestamp"),
+                        "frame_width": int(result.get("frame_width", 0) or 0),
+                        "frame_height": int(result.get("frame_height", 0) or 0),
+                        "stale": True,
+                        "stale_age_sec": round(float(age_sec), 2),
+                        "last_frame_age_sec": round(float(frame_age_sec), 2) if frame_age_sec is not None else None,
+                        "worker_alive": worker_alive,
+                    }
+                if age_sec > stale_warn_after_sec and bool(result.get("ok")):
+                    result["stale"] = True
+                    result["stale_age_sec"] = round(float(age_sec), 2)
+                    result["last_frame_age_sec"] = round(float(frame_age_sec), 2) if frame_age_sec is not None else None
+                    result["worker_alive"] = worker_alive
             return result
 
     def status(self) -> dict[str, Any]:
@@ -197,6 +209,8 @@ class ArucoService:
                 "dictionary": self.dictionary_name,
                 "worker_alive": bool(self._thread and self._thread.is_alive()),
                 "queue_size": self._queue.qsize(),
+                "last_result_age_sec": round(time.monotonic() - self._last_result_monotonic, 2) if self._last_result_monotonic > 0 else None,
+                "last_frame_age_sec": round(time.monotonic() - self._last_frame_monotonic, 2) if self._last_frame_monotonic > 0 else None,
                 "stats": dict(self._stats),
                 "last_result": dict(self._last_result),
             }
@@ -269,6 +283,21 @@ class ArucoService:
                     ids = detected_ids
                     if scale_back != 1.0:
                         corners = [c.astype("float32") * scale_back for c in corners]
+                    # Refine corners on the original grayscale frame for better overlay precision.
+                    try:
+                        criteria = (
+                            cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+                            30,
+                            0.01,
+                        )
+                        refined: list[Any] = []
+                        for c in corners:
+                            pts = c.reshape((-1, 1, 2)).astype("float32")
+                            cv2.cornerSubPix(gray, pts, (5, 5), (-1, -1), criteria)
+                            refined.append(pts.reshape((1, -1, 2)))
+                        corners = refined
+                    except Exception:
+                        pass
                     break
 
                 markers = []

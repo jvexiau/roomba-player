@@ -80,6 +80,16 @@ def _aruco_observed_size_px(marker: dict) -> float | None:
     return float(sum(edges) / len(edges))
 
 
+def _aruco_marker_size_mm(marker_cfg: dict) -> float:
+    try:
+        size_mm = float(marker_cfg.get("size_mm", 0.0) or 0.0)
+    except Exception:
+        size_mm = 0.0
+    if size_mm > 0.0:
+        return size_mm
+    return max(10.0, float(settings.aruco_marker_size_cm) * 10.0)
+
+
 def _aruco_axis_and_base_distance(marker_cfg: dict) -> tuple[float, float, float] | None:
     try:
         mx = float(marker_cfg.get("x_mm", 0.0))
@@ -106,6 +116,109 @@ def _aruco_axis_and_base_distance(marker_cfg: dict) -> tuple[float, float, float
     return (axis_x, axis_y, base)
 
 
+def _aruco_center_xy(marker: dict, frame_width: int) -> tuple[float, float]:
+    center = marker.get("center") if isinstance(marker.get("center"), list) else None
+    if center and len(center) == 2:
+        try:
+            return (float(center[0]), float(center[1]))
+        except Exception:
+            pass
+    return (float(frame_width) * 0.5, 0.0)
+
+
+def _compute_aruco_pair_target_pose(
+    marker_a_cfg: dict,
+    marker_a: dict,
+    marker_b_cfg: dict,
+    marker_b: dict,
+    frame_width: int,
+) -> tuple[float, float, float, float, float] | None:
+    try:
+        ax = float(marker_a_cfg.get("x_mm", 0.0) or 0.0)
+        ay = float(marker_a_cfg.get("y_mm", 0.0) or 0.0)
+        bx = float(marker_b_cfg.get("x_mm", 0.0) or 0.0)
+        by = float(marker_b_cfg.get("y_mm", 0.0) or 0.0)
+    except Exception:
+        return None
+    world_dx = bx - ax
+    world_dy = by - ay
+    world_norm = math.hypot(world_dx, world_dy)
+    if world_norm < 1e-6:
+        return None
+    tan_x = world_dx / world_norm
+    tan_y = world_dy / world_norm
+
+    axis_a = _aruco_axis_and_base_distance(marker_a_cfg)
+    axis_b = _aruco_axis_and_base_distance(marker_b_cfg)
+    if axis_a is None or axis_b is None:
+        return None
+    avg_axis_x = axis_a[0] + axis_b[0]
+    avg_axis_y = axis_a[1] + axis_b[1]
+    avg_norm = math.hypot(avg_axis_x, avg_axis_y)
+    if avg_norm > 1e-6:
+        avg_axis_x /= avg_norm
+        avg_axis_y /= avg_norm
+    else:
+        avg_axis_x, avg_axis_y = axis_a[0], axis_a[1]
+
+    n1x, n1y = -tan_y, tan_x
+    n2x, n2y = tan_y, -tan_x
+    if (n2x * avg_axis_x + n2y * avg_axis_y) > (n1x * avg_axis_x + n1y * avg_axis_y):
+        axis_x, axis_y = n2x, n2y
+    else:
+        axis_x, axis_y = n1x, n1y
+
+    a_cx, a_cy = _aruco_center_xy(marker_a, frame_width)
+    b_cx, b_cy = _aruco_center_xy(marker_b, frame_width)
+    pair_px = math.hypot(b_cx - a_cx, b_cy - a_cy)
+    if pair_px < 1.0:
+        return None
+
+    focal_px = max(1.0, float(settings.aruco_focal_px))
+    pair_spacing_mm = world_norm
+    marker_size_mm = 0.5 * (_aruco_marker_size_mm(marker_a_cfg) + _aruco_marker_size_mm(marker_b_cfg))
+    marker_a_px = _aruco_observed_size_px(marker_a)
+    marker_b_px = _aruco_observed_size_px(marker_b)
+    side_px_values = [v for v in (marker_a_px, marker_b_px) if isinstance(v, float) and v > 1.0]
+    area_a = float(marker_a.get("area_px", 0.0) or 0.0)
+    area_b = float(marker_b.get("area_px", 0.0) or 0.0)
+    avg_area = 0.5 * (max(0.0, area_a) + max(0.0, area_b))
+
+    d_pair = (focal_px * pair_spacing_mm) / pair_px
+    d_size = None
+    if side_px_values:
+        d_size = (focal_px * marker_size_mm) / (sum(side_px_values) / len(side_px_values))
+    d_area = None
+    if avg_area > 1.0:
+        d_area = (focal_px * marker_size_mm) / max(1.0, math.sqrt(avg_area))
+
+    target_dist = d_pair
+    if d_size is not None:
+        target_dist = (0.75 * target_dist) + (0.25 * d_size)
+    if d_area is not None:
+        target_dist = (0.85 * target_dist) + (0.15 * d_area)
+    target_dist = max(70.0, min(2500.0, float(target_dist)))
+
+    mid_x = 0.5 * (ax + bx)
+    mid_y = 0.5 * (ay + by)
+    target_x = mid_x + axis_x * target_dist
+    target_y = mid_y + axis_y * target_dist
+
+    base_heading = math.degrees(math.atan2(-axis_y, -axis_x))
+    pair_cx = 0.5 * (a_cx + b_cx)
+    fw = max(1.0, float(frame_width or 1.0))
+    # Bigger observed tags => stronger hard snap to "face markers" heading.
+    area_anchor = 3253.0 * ((marker_size_mm / 150.0) ** 2)
+    proximity = max(0.0, min(1.0, avg_area / max(1.0, area_anchor)))
+    heading_offset_gain = float(settings.aruco_heading_gain_deg) * (0.25 * (1.0 - proximity))
+    heading_offset = ((pair_cx / fw) - 0.5) * heading_offset_gain
+    target_theta = _normalize_angle_deg(base_heading + heading_offset)
+
+    pos_blend = max(0.92, min(1.0, 0.9 + 0.14 * proximity))
+    theta_blend = max(0.94, min(1.0, 0.9 + 0.2 * proximity))
+    return (target_x, target_y, target_theta, pos_blend, theta_blend)
+
+
 def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int) -> tuple[float, float, float, float, float] | None:
     axis_data = _aruco_axis_and_base_distance(marker_cfg)
     if axis_data is None:
@@ -115,12 +228,13 @@ def _compute_aruco_target_pose(marker_cfg: dict, marker: dict, frame_width: int)
     marker_y = float(marker_cfg.get("y_mm", 0.0) or 0.0)
     marker_px = _aruco_observed_size_px(marker)
     area_px = float(marker.get("area_px", 0.0) or 0.0)
+    size_mm = _aruco_marker_size_mm(marker_cfg)
     if area_px > 1.0:
-        # Field calibration anchor: area 3253 px² ~= 150 mm from marker.
-        target_dist = 150.0 * math.sqrt(3253.0 / area_px)
+        area_anchor = 3253.0 * ((size_mm / 150.0) ** 2)
+        # Keep area-based estimate for close-range behavior, normalized by tag size.
+        target_dist = 150.0 * (size_mm / 150.0) * math.sqrt(max(1.0, area_anchor) / area_px)
         target_dist = max(70.0, min(2500.0, target_dist))
     elif marker_px is not None and marker_px > 1.0:
-        size_mm = max(1.0, float(marker_cfg.get("size_mm", 150.0) or 150.0))
         est_dist = (float(settings.aruco_focal_px) * size_mm) / marker_px
         target_dist = max(70.0, min(2500.0, est_dist * 0.18))
     else:
@@ -177,6 +291,56 @@ def _apply_aruco_odometry_snap(result: dict) -> bool:
         key=lambda m: float(m.get("area_px", 0.0) or 0.0),
         reverse=True,
     )
+    pair_candidates: list[tuple[float, dict, dict, dict, dict]] = []
+    for i, marker_a in enumerate(ranked):
+        try:
+            marker_a_id = int(marker_a.get("id"))
+        except Exception:
+            continue
+        marker_a_cfg = marker_index.get(marker_a_id)
+        if marker_a_cfg is None:
+            continue
+        for marker_b in ranked[i + 1 :]:
+            try:
+                marker_b_id = int(marker_b.get("id"))
+            except Exception:
+                continue
+            marker_b_cfg = marker_index.get(marker_b_id)
+            if marker_b_cfg is None:
+                continue
+            try:
+                wx = float(marker_b_cfg.get("x_mm", 0.0) or 0.0) - float(marker_a_cfg.get("x_mm", 0.0) or 0.0)
+                wy = float(marker_b_cfg.get("y_mm", 0.0) or 0.0) - float(marker_a_cfg.get("y_mm", 0.0) or 0.0)
+            except Exception:
+                continue
+            world_dist = math.hypot(wx, wy)
+            if world_dist < 80.0:
+                continue
+            a_cx, a_cy = _aruco_center_xy(marker_a, frame_width)
+            b_cx, b_cy = _aruco_center_xy(marker_b, frame_width)
+            pixel_dist = math.hypot(b_cx - a_cx, b_cy - a_cy)
+            if pixel_dist < 2.0:
+                continue
+            area_sum = float(marker_a.get("area_px", 0.0) or 0.0) + float(marker_b.get("area_px", 0.0) or 0.0)
+            score = area_sum + (120.0 * pixel_dist)
+            pair_candidates.append((score, marker_a_cfg, marker_a, marker_b_cfg, marker_b))
+
+    if pair_candidates:
+        pair_candidates.sort(key=lambda x: x[0], reverse=True)
+        _score, cfg_a, det_a, cfg_b, det_b = pair_candidates[0]
+        pair_pose = _compute_aruco_pair_target_pose(cfg_a, det_a, cfg_b, det_b, frame_width)
+        if pair_pose is not None:
+            tx, ty, tt, pos_blend, theta_blend = pair_pose
+            app.state.odometry.apply_external_pose(
+                x_mm=tx,
+                y_mm=ty,
+                theta_deg=tt,
+                blend_pos=pos_blend,
+                blend_theta=theta_blend,
+                source="aruco_pair_snap",
+            )
+            return True
+
     for marker in ranked:
         try:
             marker_id = int(marker.get("id"))
@@ -308,7 +472,12 @@ def player() -> str:
         "player.html",
         {
             "__CAMERA_ENABLED__": json.dumps(settings.camera_stream_enabled),
+            "__CAMERA_WIDTH__": json.dumps(settings.camera_width),
+            "__CAMERA_HEIGHT__": json.dumps(settings.camera_height),
             "__ARUCO_ENABLED__": json.dumps(settings.aruco_enabled),
+            "__ARUCO_FOCAL_PX__": json.dumps(settings.aruco_focal_px),
+            "__ARUCO_MARKER_SIZE_CM__": json.dumps(settings.aruco_marker_size_cm),
+            "__ARUCO_OVERLAY_FLIP_X__": json.dumps(settings.aruco_overlay_flip_x),
         },
     )
 
@@ -332,7 +501,6 @@ def camera_stream():
 
     def stream_iter():
         aruco_buf = bytearray()
-        next_aruco_at = 0.0
         try:
             while True:
                 chunk = ffmpeg_proc.stdout.read(8192)
@@ -340,18 +508,15 @@ def camera_stream():
                     break
                 if app.state.aruco.enabled:
                     aruco_buf.extend(chunk)
-                    now = time.monotonic()
-                    if now >= next_aruco_at:
-                        data = bytes(aruco_buf)
-                        start = data.rfind(b"\xff\xd8")
-                        end = data.rfind(b"\xff\xd9")
-                        if start >= 0 and end > start:
-                            app.state.aruco.enqueue_jpeg_frame(data[start : end + 2])
-                            next_aruco_at = now + app.state.aruco.interval_sec
-                            if len(aruco_buf) > 128_000:
-                                aruco_buf[:] = aruco_buf[-64_000:]
-                        elif len(aruco_buf) > 1_000_000:
+                    data = bytes(aruco_buf)
+                    start = data.rfind(b"\xff\xd8")
+                    end = data.rfind(b"\xff\xd9")
+                    if start >= 0 and end > start:
+                        app.state.aruco.enqueue_jpeg_frame(data[start : end + 2])
+                        if len(aruco_buf) > 128_000:
                             aruco_buf[:] = aruco_buf[-64_000:]
+                    elif len(aruco_buf) > 1_000_000:
+                        aruco_buf[:] = aruco_buf[-64_000:]
                 yield chunk
         finally:
             app.state.camera.stop()
