@@ -10,30 +10,33 @@
     <div class="wrap">
       <h1>Player</h1>
       <p class="small">Keyboard AZERTY: Z forward, S backward, Q left, D right. Hold to move, release to stop.</p>
-      <section class="camera-wrap">
-        <div class="camera-box" id="cameraBox">
-          <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
-          <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
-          <canvas id="cameraOverlay" style="display:none;"></canvas>
-        </div>
-        <p class="small">ArUco: <strong id="arucoStatus">disabled</strong></p>
-      </section>
-      <section class="card">
-        <h2>Salon Map</h2>
-        <div class="toolbar">
-          <button class="btn" id="btnLoadSalon">load plans/salon.yaml</button>
-          <button class="btn" id="btnResetHistory">reset history + start pose</button>
-          <input type="file" id="planFile" accept=".json,application/json" />
-        </div>
-        <p class="small">Odometry pose: <strong id="poseText">x=0 y=0 θ=0°</strong></p>
-        <div class="plan-stack">
-          <canvas id="planStaticCanvas" width="900" height="380"></canvas>
-          <canvas id="planRobotCanvas" width="900" height="380"></canvas>
-        </div>
-      </section>
+      <div class="top-grid">
+        <section class="camera-wrap card">
+          <h2>Camera</h2>
+          <div class="camera-box" id="cameraBox">
+            <div class="camera-off" id="cameraMessage">Camera stream disabled.</div>
+            <img id="cameraFeed" alt="Raspberry camera stream" style="display:none;" />
+            <canvas id="cameraOverlay" style="display:none;"></canvas>
+          </div>
+          <p class="small">ArUco: <strong id="arucoStatus">disabled</strong></p>
+        </section>
+        <section class="card">
+          <h2>Salon Map</h2>
+          <div class="toolbar">
+            <button class="btn" id="btnLoadSalon">load plans/salon.yaml</button>
+            <button class="btn" id="btnResetHistory">reset history + start pose</button>
+            <input type="file" id="planFile" accept=".json,application/json" />
+          </div>
+          <p class="small">Odometry pose: <strong id="poseText">x=0 y=0 θ=0°</strong></p>
+          <div class="plan-stack">
+            <canvas id="planStaticCanvas" width="900" height="380"></canvas>
+            <canvas id="planRobotCanvas" width="900" height="380"></canvas>
+          </div>
+        </section>
+      </div>
 
       <div class="grid">
-        <section class="card">
+        <section class="card card-control">
           <h2>Control</h2>
           <div class="status" id="ctrlStatus">control websocket: connecting...</div>
           <div class="toolbar">
@@ -66,7 +69,7 @@
           <p class="small">Executed command: <strong id="executedCommand">stop</strong></p>
         </section>
 
-        <section class="card">
+        <section class="card card-sensors">
           <h2>Live Sensors</h2>
           <div class="status" id="telemetryStatus">telemetry websocket: connecting...</div>
           <div class="telemetry">
@@ -110,7 +113,7 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card card-log">
           <h2>Realtime log</h2>
           <pre id="log"></pre>
         </section>
